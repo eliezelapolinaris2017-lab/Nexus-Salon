@@ -245,10 +245,16 @@
     </footer>
   </div>
 
-  <!-- jsPDF (para exportar a PDF) -->
+     <!-- jsPDF (para exportar a PDF) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-VxFQ9KBY2B2M5cXWE7h1Y8j5xsJGPy0C38xF7yoSgG6vHkM6M8FrHRqw0WM0w_RFjw72F9GQ+X8G3bK3XnB5GA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-  <!-- App JS (Firebase + lógica) -->
-  <script type="module" src="app.js?v=1"></script>
+  <!-- Firebase (VERSIÓN COMPAT, sin imports) -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-storage-compat.js"></script>
+
+  <!-- App JS (ya NO es type="module") -->
+  <script src="app.js?v=2"></script>
 </body>
 </html>
