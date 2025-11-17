@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexus Salon — Control de Tickets</title>
+  <meta name="description" content="Nexus Salon — Control de tickets para salón de belleza. Versión web y móvil sincronizada con Firebase.">
+  <link rel="icon" type="image/png" href="assets/logo.png" />
+  <link rel="stylesheet" href="styles.css?v=1" />
+</head>
+<body>
+
+  <!-- ============== PANTALLA PIN (Seguridad local) ============== -->
+  <div id="pinScreen" class="view view-centered">
+    <div class="card card-pin">
+      <div class="brand-header">
+        <div class="brand-logo-wrap">
+          <img id="pinLogo" src="assets/logo.png" alt="Logo" class="brand-logo">
+        </div>
+        <div class="brand-text-wrap">
+          <h1 id="pinAppName">Nexus Salon</h1>
+          <p>Acceso protegido por PIN</p>
+        </div>
+      </div>
+      <label class="field-label" for="pinInput">Ingrese PIN de seguridad</label>
+      <input id="pinInput" type="password" maxlength="6" class="field-input" autocomplete="off" />
+      <p id="pinError" class="msg-error"></p>
+      <button id="pinEnterBtn" class="btn btn-primary">Entrar</button>
+      <p class="pin-hint">PIN inicial por defecto: <strong>1234</strong> (luego lo puedes cambiar en Configuración).</p>
+    </div>
+  </div>
+
+  <!-- ============== PANTALLA AUTH (Google) ============== -->
+  <div id="authScreen" class="view view-centered hidden">
+    <div class="card card-auth">
+      <h2>Conectar con Google</h2>
+      <p>Para sincronizar tickets y el logo entre dispositivos, inicia sesión con tu cuenta de Google.</p>
+      <button id="googleSignInBtn" class="btn btn-google">
+        Conectar con Google
+      </button>
+      <button id="authBackToPinBtn" class="btn btn-text">
+        Volver a PIN
+      </button>
+    </div>
+  </div>
+
+  <!-- ============== APP PRINCIPAL ============== -->
+  <div id="appScreen" class="view hidden">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand-inline">
+          <div class="brand-logo-wrap small">
+            <img id="appLogo" src="assets/logo.png" alt="Nexus Salon" class="brand-logo">
+          </div>
+          <div class="brand-text-wrap">
+            <div class="app-name-row">
+              <span contenteditable="true" id="appNameEditable" class="app-name">Nexus Salon</span>
+            </div>
+            <small class="app-subtitle">Control de tickets para salón de belleza</small>
+          </div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="user-info">
+          <span id="userEmail" class="user-email">Sin conexión a Google</span>
+        </div>
+        <div class="topbar-actions">
+          <button id="syncBtn" class="btn btn-outline">Sincronizar</button>
+          <button id="googleStatusBtn" class="btn btn-outline">Conectar Google</button>
+          <button id="logoutBtn" class="btn btn-danger">Salir</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Contenido principal -->
+    <main class="layout-main">
+      <!-- Columna izquierda: Ticket actual -->
+      <section class="panel panel-form">
+        <h2>Nuevo Ticket</h2>
+
+        <div class="grid-2">
+          <div class="field-group">
+            <label class="field-label">Número de ticket</label>
+            <input id="ticketNumber" type="text" class="field-input" readonly />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Fecha</label>
+            <input id="ticketDate" type="date" class="field-input" />
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Nombre del cliente</label>
+          <input id="clientName" type="text" class="field-input" placeholder="Ej. Marta González" />
+        </div>
+
+        <div class="grid-2">
+          <div class="field-group">
+            <label class="field-label">Técnica</label>
+            <select id="technician" class="field-input">
+              <option value="">Seleccionar...</option>
+              <option value="Cynthia">Cynthia</option>
+              <option value="Carmen">Carmen</option>
+              <option value="Yerika">Yerika</option>
+            </select>
+            <input id="technicianCustom" type="text" class="field-input mt-4" placeholder="Otra técnica (opcional)" />
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">Método de pago</label>
+            <select id="paymentMethod" class="field-input">
+              <option value="">Seleccionar...</option>
+              <option value="ATH Móvil">ATH Móvil</option>
+              <option value="Efectivo">Efectivo</option>
+              <option value="Tarjeta">Tarjeta</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="field-group">
+            <label class="field-label">Servicio</label>
+            <input id="serviceDesc" type="text" class="field-input" placeholder="Corte, tinte, blower, etc." />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Cantidad</label>
+            <input id="quantity" type="number" min="1" step="1" class="field-input" value="1" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Costo por servicio</label>
+            <input id="unitPrice" type="number" min="0" step="0.01" class="field-input" placeholder="0.00" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field-group">
+            <label class="field-label">Propina</label>
+            <input id="tipAmount" type="number" min="0" step="0.01" class="field-input" placeholder="0.00" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Total (no IVU)</label>
+            <input id="totalAmount" type="number" class="field-input" readonly />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button id="newTicketBtn" class="btn btn-secondary">Nuevo ticket</button>
+          <button id="saveTicketBtn" class="btn btn-primary">Guardar ticket</button>
+        </div>
+
+        <p id="formMessage" class="msg-info"></p>
+      </section>
+
+      <!-- Columna derecha: Historial + exportaciones + branding -->
+      <section class="panel panel-history">
+        <div class="panel-header">
+          <h2>Historial de tickets</h2>
+          <div class="panel-header-actions">
+            <button id="exportPdfBtn" class="btn btn-outline">Exportar PDF</button>
+            <button id="backupJsonBtn" class="btn btn-outline">Backup JSON</button>
+          </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="filters-row">
+          <div class="filter-group">
+            <label>Desde</label>
+            <input id="filterStart" type="date" class="field-input small">
+          </div>
+          <div class="filter-group">
+            <label>Hasta</label>
+            <input id="filterEnd" type="date" class="field-input small">
+          </div>
+          <div class="filter-group">
+            <label>Técnica</label>
+            <select id="filterTech" class="field-input small">
+              <option value="">Todas</option>
+              <option value="Cynthia">Cynthia</option>
+              <option value="Carmen">Carmen</option>
+              <option value="Yerika">Yerika</option>
+            </select>
+          </div>
+          <div class="filter-group filter-actions">
+            <button id="applyFilterBtn" class="btn btn-small btn-primary">Filtrar</button>
+            <button id="clearFilterBtn" class="btn btn-small btn-text">Limpiar</button>
+          </div>
+        </div>
+
+        <!-- Tabla de historial -->
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Técnica</th>
+                <th>Servicio</th>
+                <th>Método</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="ticketsTableBody">
+              <!-- Se llena por JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Branding: logo + header/footer editables -->
+        <div class="branding-panel">
+          <h3>Branding y ajustes</h3>
+          <div class="grid-2">
+            <div class="field-group">
+              <label class="field-label">Logo (PNG recomendado)</label>
+              <input id="logoFileInput" type="file" accept="image/png,image/jpeg" class="field-input" />
+              <button id="uploadLogoBtn" class="btn btn-outline mt-4">Subir y sincronizar logo</button>
+              <p id="logoStatus" class="msg-info small"></p>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Header (texto en PDF)</label>
+              <textarea id="pdfHeaderText" rows="3" class="field-input" placeholder="Texto de encabezado para los tickets PDF"></textarea>
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Footer (texto en PDF)</label>
+            <textarea id="pdfFooterText" rows="2" class="field-input" placeholder="Texto de pie de página para los tickets PDF"></textarea>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Cambiar PIN</label>
+            <div class="grid-2">
+              <input id="newPinInput" type="password" maxlength="6" class="field-input" placeholder="Nuevo PIN" />
+              <button id="changePinBtn" class="btn btn-outline">Guardar PIN</button>
+            </div>
+            <p id="pinChangeMessage" class="msg-info small"></p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span id="footerText">© 2025 Nexus Salon — Sistema de tickets</span>
+    </footer>
+  </div>
+
+  <!-- jsPDF (para exportar a PDF) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-VxFQ9KBY2B2M5cXWE7h1Y8j5xsJGPy0C38xF7yoSgG6vHkM6M8FrHRqw0WM0w_RFjw72F9GQ+X8G3bK3XnB5GA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <!-- App JS (Firebase + lógica) -->
+  <script type="module" src="app.js?v=1"></script>
+</body>
+</html>
