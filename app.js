@@ -495,14 +495,29 @@ function exportTicketsToPDF() {
   }
 
   const doc = new jsPDFLib({ orientation: "p", unit: "mm", format: "a4" });
+
   const marginLeft = 12;
+
+  // Posiciones X de cada columna (más separadas)
+  const col = {
+    num: marginLeft,        // #
+    date: marginLeft + 12,  // Fecha
+    client: marginLeft + 38,// Cliente
+    tech: marginLeft + 80,  // Técnica
+    service: marginLeft + 112, // Servicio
+    method: marginLeft + 150,  // Método
+    total: 200              // Total (alineado a la derecha)
+  };
+
   let y = 14;
 
+  // Título
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.text(state.appName || "Nexus Salon", marginLeft, y);
   y += 6;
 
+  // Encabezado opcional
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   if (state.pdfHeaderText) {
@@ -517,37 +532,42 @@ function exportTicketsToPDF() {
   doc.text(`Generado: ${now.toLocaleString()}`, marginLeft, y);
   y += 6;
 
+  // Encabezados de la tabla
   doc.setFont("helvetica", "bold");
-  doc.text("#", marginLeft, y);
-  doc.text("Fecha", marginLeft + 10, y);
-  doc.text("Cliente", marginLeft + 32, y);
-  doc.text("Técnica", marginLeft + 82, y);
-  doc.text("Servicio", marginLeft + 112, y);
-  doc.text("Método", marginLeft + 152, y);
-  doc.text("Total", marginLeft + 182 - 10, y);
+  doc.text("#", col.num, y);
+  doc.text("Fecha", col.date, y);
+  doc.text("Cliente", col.client, y);
+  doc.text("Técnica", col.tech, y);
+  doc.text("Servicio", col.service, y);
+  doc.text("Método", col.method, y);
+  doc.text("Total", col.total, y, { align: "right" });
   y += 4;
 
+  // Filas
   doc.setFont("helvetica", "normal");
   list.forEach((t) => {
     if (y > 270) {
       doc.addPage();
       y = 14;
     }
-    doc.text(String(t.number || ""), marginLeft, y);
-    doc.text(String(t.date || ""), marginLeft + 10, y);
-    doc.text(String(t.clientName || "").substring(0, 18), marginLeft + 32, y);
-    doc.text(String(t.technician || "").substring(0, 14), marginLeft + 82, y);
-    doc.text(String(t.serviceDesc || "").substring(0, 18), marginLeft + 112, y);
-    doc.text(String(t.paymentMethod || ""), marginLeft + 152, y);
+
+    doc.text(String(t.number || ""), col.num, y);
+    doc.text(String(t.date || ""), col.date, y);
+    doc.text(String(t.clientName || "").substring(0, 18), col.client, y);
+    doc.text(String(t.technician || "").substring(0, 14), col.tech, y);
+    doc.text(String(t.serviceDesc || "").substring(0, 20), col.service, y);
+    doc.text(String(t.paymentMethod || ""), col.method, y);
     doc.text(
       `$${Number(t.totalAmount || 0).toFixed(2)}`,
-      marginLeft + 182 - 10,
+      col.total,
       y,
       { align: "right" }
     );
+
     y += 4;
   });
 
+  // Footer opcional
   if (state.pdfFooterText) {
     const footerLines = doc.splitTextToSize(state.pdfFooterText, 180);
     doc.setFontSize(9);
@@ -555,25 +575,6 @@ function exportTicketsToPDF() {
   }
 
   doc.save("tickets-nexus-salon.pdf");
-}
-
-function downloadBackupJson() {
-  const list = getFilteredTickets();
-  if (!list.length) {
-    alert("No hay tickets para exportar con el filtro actual.");
-    return;
-  }
-  const blob = new Blob([JSON.stringify(list, null, 2)], {
-    type: "application/json"
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "tickets-nexus-salon.json";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 
