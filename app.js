@@ -576,6 +576,7 @@ function downloadBackupJson() {
   URL.revokeObjectURL(url);
 }
 
+
 /* ========== CAMBIAR PIN ========== */
 function changePin() {
   const newPin = (newPinInput.value || "").trim();
