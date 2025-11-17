@@ -270,17 +270,26 @@ function handlePinEnter() {
   }
 }
 
-/* ========== AUTH GOOGLE + FIRESTORE LISTEN ========== */
-function ticketsCollectionRef(uid) {
-  return db.collection("users").doc(uid).collection("salonTickets");
+/* ========== FIRESTORE: REFERENCIAS COMPARTIDAS ========== */
+
+// Colección compartida de tickets (NO por usuario)
+function ticketsCollectionRef() {
+  return db.collection("salonTickets");
 }
 
-function startTicketsListener(uid) {
+// Documento de branding compartido
+function brandingDocRef() {
+  return db.collection("branding").doc("salon");
+}
+
+/* ========== AUTH GOOGLE + FIRESTORE LISTEN ========== */
+
+function startTicketsListener() {
   if (state.unsubscribeTickets) {
     state.unsubscribeTickets();
     state.unsubscribeTickets = null;
   }
-  state.unsubscribeTickets = ticketsCollectionRef(uid)
+  state.unsubscribeTickets = ticketsCollectionRef()
     .orderBy("number", "asc")
     .onSnapshot(
       (snap) => {
@@ -306,7 +315,7 @@ async function signInWithGoogle() {
     userEmailSpan.textContent = user.email || "";
     saveState();
     await loadBrandingFromCloud();
-    startTicketsListener(user.uid);
+    startTicketsListener();
     showAppShell();
   } catch (err) {
     console.error("Error Google SignIn", err);
@@ -334,7 +343,7 @@ auth.onAuthStateChanged((user) => {
   state.user = user || null;
   if (user) {
     userEmailSpan.textContent = user.email || "";
-    startTicketsListener(user.uid);
+    startTicketsListener();
   } else {
     userEmailSpan.textContent = "Sin conexión a Google";
     if (state.unsubscribeTickets) {
@@ -423,7 +432,7 @@ async function saveTicket() {
     const ticket = collectTicketFromForm();
     const docId = String(ticket.number);
 
-    await ticketsCollectionRef(state.user.uid)
+    await ticketsCollectionRef()
       .doc(docId)
       .set(ticket, { merge: true });
 
@@ -439,15 +448,12 @@ async function saveTicket() {
   }
 }
 
-/* ========== BRANDING EN FIRESTORE (SIN STORAGE) ========== */
-function brandingDocRef(uid) {
-  return db.collection("users").doc(uid).collection("branding").doc("salon");
-}
+/* ========== BRANDING EN FIRESTORE (COMPARTIDO) ========== */
 
 async function loadBrandingFromCloud() {
   if (!state.user) return;
   try {
-    const snap = await brandingDocRef(state.user.uid).get();
+    const snap = await brandingDocRef().get();
     if (snap.exists) {
       const data = snap.data();
       if (data.appName) state.appName = data.appName;
@@ -476,7 +482,7 @@ async function saveBrandingToCloud() {
       pdfFooterText: state.pdfFooterText || "",
       footerText: state.footerText || ""
     };
-    await brandingDocRef(state.user.uid).set(payload, { merge: true });
+    await brandingDocRef().set(payload, { merge: true });
     brandingStatus.textContent = "Branding guardado en Firebase.";
   } catch (e) {
     console.error("Error guardando branding", e);
@@ -715,7 +721,6 @@ cajaApplyBtn.addEventListener("click", () => {
 });
 
 cajaClearBtn.addEventListener("click", () => {
-  // "Hoy"
   const today = new Date().toISOString().slice(0, 10);
   cajaStartInput.value = today;
   cajaEndInput.value = today;
@@ -776,10 +781,10 @@ ticketsTableBody.addEventListener("click", async (e) => {
     if (!ok) return;
 
     try {
-      await ticketsCollectionRef(state.user.uid)
+      await ticketsCollectionRef()
         .doc(String(number))
         .delete();
-      // onSnapshot actualiza la tabla y caja solo
+      // onSnapshot actualiza tabla y caja solo
     } catch (err) {
       console.error("Error eliminando ticket", err);
       alert("No se pudo eliminar el ticket.");
