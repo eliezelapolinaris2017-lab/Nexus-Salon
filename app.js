@@ -507,118 +507,118 @@ function getFilteredTickets() {
 
 /* ========== PDF + BACKUP JSON ========== */
 function exportTicketsToPDF() {
-  const jsPDFLib = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPDFLib) {
-    alert("La librería jsPDF no se cargó.");
-    return;
-  }
-
-  const list = getFilteredTickets();
-  if (!list.length) {
-    alert("No hay tickets para exportar con el filtro actual.");
-    return;
-  }
-
-  const doc = new jsPDFLib({ orientation: "p", unit: "mm", format: "a4" });
-
-  const marginLeft = 12;
-
-  // Posiciones X de cada columna (más separadas)
-  const col = {
-    num: marginLeft,        // #
-    date: marginLeft + 12,  // Fecha
-    client: marginLeft + 38,// Cliente
-    tech: marginLeft + 80,  // Técnica
-    service: marginLeft + 112, // Servicio
-    method: marginLeft + 150,  // Método
-    total: 200              // Total (alineado a la derecha)
-  };
-
-  let y = 14;
-
-  // Título
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text(state.appName || "Nexus Salon", marginLeft, y);
-  y += 6;
-
-  // Encabezado opcional
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  if (state.pdfHeaderText) {
-    const lines = doc.splitTextToSize(state.pdfHeaderText, 180);
-    doc.text(lines, marginLeft, y);
-    y += lines.length * 4 + 2;
-  } else {
-    y += 2;
-  }
-
-  const now = new Date();
-  doc.text(`Generado: ${now.toLocaleString()}`, marginLeft, y);
-  y += 6;
-
-  // Encabezados de la tabla
-  doc.setFont("helvetica", "bold");
-  doc.text("#", col.num, y);
-  doc.text("Fecha", col.date, y);
-  doc.text("Cliente", col.client, y);
-  doc.text("Técnica", col.tech, y);
-  doc.text("Servicio", col.service, y);
-  doc.text("Método", col.method, y);
-  doc.text("Total", col.total, y, { align: "right" });
-  y += 4;
-
-  // Filas
-  doc.setFont("helvetica", "normal");
-  list.forEach((t) => {
-    if (y > 270) {
-      doc.addPage();
-      y = 14;
-    }
-
-    doc.text(String(t.number || ""), col.num, y);
-    doc.text(String(t.date || ""), col.date, y);
-    doc.text(String(t.clientName || "").substring(0, 18), col.client, y);
-    doc.text(String(t.technician || "").substring(0, 14), col.tech, y);
-    doc.text(String(t.serviceDesc || "").substring(0, 20), col.service, y);
-    doc.text(String(t.paymentMethod || ""), col.method, y);
-    doc.text(
-      `$${Number(t.totalAmount || 0).toFixed(2)}`,
-      col.total,
-      y,
-      { align: "right" }
-    );
-
-    y += 4;
-  });
-
-  // Footer opcional
-  if (state.pdfFooterText) {
-    const footerLines = doc.splitTextToSize(state.pdfFooterText, 180);
-    doc.setFontSize(9);
-    doc.text(footerLines, marginLeft, 288);
-  }
-
-  doc.save("tickets-nexus-salon.pdf");
+const jsPDFLib = window.jspdf && window.jspdf.jsPDF;
+if (!jsPDFLib) {
+alert("La librería jsPDF no se cargó.");
+return;
 }
 
-function downloadBackupJson() {
-  const list = getFilteredTickets();
-  if (!list.length) {
-    alert("No hay tickets para exportar con el filtro actual.");
-    return;
-  }
-  const blob = new Blob([JSON.stringify(list, null, 2)], {
-    type: "application/json"
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "tickets-nexus-salon.json";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+const list = getFilteredTickets();
+if (!list.length) {
+alert("No hay tickets para exportar con el filtro actual.");
+return;
+}
+
+const doc = new jsPDFLib({ orientation: "p", unit: "mm", format: "a4" });
+
+const marginLeft = 12;
+
+// Posiciones X de cada columna
+const col = {
+num: marginLeft,
+date: marginLeft + 12,
+client: marginLeft + 38,
+tech: marginLeft + 80,
+service: marginLeft + 112,
+method: marginLeft + 150,
+total: 200
+};
+
+let y = 14;
+
+// Título
+doc.setFont("helvetica", "bold");
+doc.setFontSize(14);
+doc.text(state.appName || "Nexus Salon", marginLeft, y);
+y += 6;
+
+// Encabezado opcional
+doc.setFontSize(10);
+doc.setFont("helvetica", "normal");
+if (state.pdfHeaderText) {
+const lines = doc.splitTextToSize(state.pdfHeaderText, 180);
+doc.text(lines, marginLeft, y);
+y += lines.length * 4 + 2;
+} else {
+y += 2;
+}
+
+const now = new Date();
+doc.text(`Generado: ${now.toLocaleString()}`, marginLeft, y);
+y += 6;
+
+// Encabezados tabla
+doc.setFont("helvetica", "bold");
+doc.text("#", col.num, y);
+doc.text("Fecha", col.date, y);
+doc.text("Cliente", col.client, y);
+doc.text("Técnica", col.tech, y);
+doc.text("Servicio", col.service, y);
+doc.text("Método", col.method, y);
+doc.text("Total", col.total, y, { align: "right" });
+y += 4;
+
+doc.setFont("helvetica", "normal");
+
+let grandTotal = 0;
+
+// Filas
+list.forEach((t) => {
+if (y > 270) {
+doc.addPage();
+y = 14;
+}
+
+const total = Number(t.totalAmount || 0);
+grandTotal += total;
+
+doc.text(String(t.number || ""), col.num, y);
+doc.text(String(t.date || ""), col.date, y);
+doc.text(String(t.clientName || "").substring(0, 18), col.client, y);
+doc.text(String(t.technician || "").substring(0, 14), col.tech, y);
+doc.text(String(t.serviceDesc || "").substring(0, 20), col.service, y);
+doc.text(String(t.paymentMethod || ""), col.method, y);
+doc.text(`$${total.toFixed(2)}`, col.total, y, { align: "right" });
+
+y += 4;
+});
+
+// =========================
+// 🔥 GRAN TOTAL
+// =========================
+if (y > 260) {
+doc.addPage();
+y = 20;
+}
+
+y += 6;
+
+doc.setFont("helvetica", "bold");
+doc.setFontSize(12);
+doc.text(
+`GRAN TOTAL: $${grandTotal.toFixed(2)}`,
+marginLeft,
+y
+);
+
+// Footer opcional
+if (state.pdfFooterText) {
+const footerLines = doc.splitTextToSize(state.pdfFooterText, 180);
+doc.setFontSize(9);
+doc.text(footerLines, marginLeft, 288);
+}
+
+doc.save("tickets-nexus-salon.pdf");
 }
 
 /* ========== CAMBIAR PIN ========== */
