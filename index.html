@@ -15,7 +15,7 @@
   <link rel="apple-touch-icon" href="assets/logo.png" />
 
   <link rel="icon" type="image/png" href="assets/logo.png" />
-  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
 
@@ -39,9 +39,7 @@
 
       <button id="pinEnterBtn" class="btn btn-primary">Entrar</button>
 
-      <p class="pin-hint">
-        
-      </p>
+      <p class="pin-hint"></p>
     </div>
   </div>
 
@@ -82,8 +80,11 @@
         <button data-page="dashboard" class="nav-btn nav-btn-active">Dashboard</button>
         <button data-page="historial" class="nav-btn">Historial</button>
         <button data-page="caja" class="nav-btn">Caja</button>
+
+        <!-- ✅ NUEVO: Propinas -->
+        <button data-page="propinas" class="nav-btn">Propinas</button>
+
         <button data-page="config" class="nav-btn">Configuración</button>
-        <!-- NUEVO: botón Comisiones -->
         <button data-page="comisiones" class="nav-btn">Comisiones</button>
       </div>
 
@@ -226,18 +227,14 @@
                   <th>Servicio</th>
                   <th>Método</th>
                   <th>Total</th>
-                  <!-- NUEVO: columna acciones para Editar / X -->
                   <th>Acciones</th>
                 </tr>
               </thead>
-              <tbody id="ticketsTableBody">
-              </tbody>
+              <tbody id="ticketsTableBody"></tbody>
             </table>
           </div>
 
-          <p class="msg-info small">
-            
-          </p>
+          <p class="msg-info small"></p>
         </div>
       </section>
 
@@ -282,9 +279,66 @@
             </div>
           </div>
 
-          <p class="msg-info small">
-            
-          </p>
+          <p class="msg-info small"></p>
+        </div>
+      </section>
+
+      <!-- ✅ NUEVO: PAGE PROPINAS -->
+      <section id="page-propinas" class="page">
+        <div class="panel wide">
+          <div class="panel-header">
+            <h2>Propinas</h2>
+            <p class="panel-subtitle">
+              Propinas se calculan aparte. No se descuentan de comisiones.
+            </p>
+          </div>
+
+          <div class="filters-row">
+            <div class="filter-group">
+              <label for="tipsStart">Desde</label>
+              <input type="date" id="tipsStart" class="field-input small">
+            </div>
+
+            <div class="filter-group">
+              <label for="tipsEnd">Hasta</label>
+              <input type="date" id="tipsEnd" class="field-input small">
+            </div>
+
+            <div class="filter-group">
+              <label for="tipsTech">Técnica</label>
+              <select id="tipsTech" class="field-input small">
+                <option value="">Todas</option>
+                <option value="Cynthia">Cynthia</option>
+                <option value="Carmen">Carmen</option>
+                <option value="Yerika">Yerika</option>
+              </select>
+            </div>
+
+            <div class="filter-group filter-actions">
+              <button id="tipsApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
+              <button id="tipsClearBtn" class="btn btn-small btn-text">Hoy</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Técnica</th>
+                  <th>Total propinas</th>
+                </tr>
+              </thead>
+              <tbody id="tipsTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="caja-summary-grid">
+            <div class="caja-card total">
+              <h3>Total de propinas</h3>
+              <p id="tipsTotal" class="caja-amount">$0.00</p>
+              <span class="caja-badge">Suma de propinas según filtro</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -334,7 +388,6 @@
             <p id="pinChangeMessage" class="msg-info small"></p>
           </div>
 
-          <!-- NUEVO: configuración de porcentajes de comisión -->
           <div class="field-group">
             <h3>Porcentajes de comisión</h3>
             <p class="msg-info small">
@@ -363,6 +416,7 @@
               </div>
             </div>
           </div>
+
         </div>
       </section>
 
@@ -372,11 +426,10 @@
           <div class="panel-header">
             <h2>Comisiones por técnica</h2>
             <p class="panel-subtitle">
-              Calcula comisiones por rango de fechas y por técnica según los tickets registrados.
+              Comisiones se calculan sobre el total SIN propina.
             </p>
           </div>
 
-          <!-- Filtros -->
           <div class="filters-row">
             <div class="filter-group">
               <label for="comiStart">Desde</label>
@@ -404,24 +457,20 @@
             </div>
           </div>
 
-          <!-- Tabla de comisiones -->
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Técnica</th>
                   <th>% Comisión</th>
-                  <th>Total vendido</th>
+                  <th>Total vendido (sin propina)</th>
                   <th>Comisión</th>
                 </tr>
               </thead>
-              <tbody id="comiTableBody">
-                <!-- filas dinámicas -->
-              </tbody>
+              <tbody id="comiTableBody"></tbody>
             </table>
           </div>
 
-          <!-- Total general de comisiones -->
           <div class="caja-summary-grid">
             <div class="caja-card total">
               <h3>Comisión total a pagar</h3>
@@ -434,13 +483,10 @@
 
     </main>
 
-    <!-- Footer -->
     <footer class="footer">
       <span id="footerText">© 2025 Nexus Salon — Sistema de tickets</span>
     </footer>
   </div>
-
-  <!-- ========== LIBRERÍAS ========== -->
 
   <!-- jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -451,6 +497,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-firestore-compat.js"></script>
 
   <!-- App -->
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
