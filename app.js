@@ -45,12 +45,7 @@ function loadState() {
       const parsed = JSON.parse(raw);
       state = { ...state, ...parsed };
       if (!state.commissionRates) {
-        state.commissionRates = {
-          Cynthia: 40,
-          Carmen: 35,
-          Yerika: 35,
-          default: 30
-        };
+        state.commissionRates = { Cynthia: 40, Carmen: 35, Yerika: 35, default: 30 };
       }
     }
   } catch (e) {
@@ -63,6 +58,14 @@ function saveState() {
   delete copy.user;
   delete copy.unsubscribeTickets;
   localStorage.setItem(LOCAL_KEY, JSON.stringify(copy));
+}
+
+/* ========== FIRESTORE: REFERENCIAS COMPARTIDAS ========== */
+function ticketsCollectionRef() {
+  return db.collection("salonTickets");
+}
+function brandingDocRef() {
+  return db.collection("branding").doc("salon");
 }
 
 /* ========== DOM ========== */
@@ -92,7 +95,7 @@ const pages = {
   caja: document.getElementById("page-caja"),
   config: document.getElementById("page-config"),
   comisiones: document.getElementById("page-comisiones"),
-  // ✅ NUEVO
+  propinas: document.getElementById("page-propinas"),
   retenciones: document.getElementById("page-retenciones")
 };
 
@@ -157,17 +160,41 @@ const comiClearBtn = document.getElementById("comiClearBtn");
 const comiTableBody = document.getElementById("comiTableBody");
 const comiTotalSpan = document.getElementById("comiTotal");
 
-// ✅ NUEVO: retenciones
-const retStartInput = document.getElementById("retStart");
-const retEndInput = document.getElementById("retEnd");
-const retTechSelect = document.getElementById("retTech");
-const retApplyBtn = document.getElementById("retApplyBtn");
-const retClearBtn = document.getElementById("retClearBtn");
-const retTableBody = document.getElementById("retTableBody");
-const retTotalSpan = document.getElementById("retTotal");
+// propinas
+const tipsStartInput = document.getElementById("tipsStart");
+const tipsEndInput = document.getElementById("tipsEnd");
+const tipsTechSelect = document.getElementById("tipsTech");
+const tipsGroupSelect = document.getElementById("tipsGroup");
+const tipsApplyBtn = document.getElementById("tipsApplyBtn");
+const tipsClearBtn = document.getElementById("tipsClearBtn");
+const tipsTableBody = document.getElementById("tipsTableBody");
+const tipsTotalSpan = document.getElementById("tipsTotal");
 
-/* ========== RENDER ==========
-   (branding + tickets + número + caja + comisiones) */
+// retenciones
+const retenStartInput = document.getElementById("retenStart");
+const retenEndInput = document.getElementById("retenEnd");
+const retenTechSelect = document.getElementById("retenTech");
+const retenApplyBtn = document.getElementById("retenApplyBtn");
+const retenClearBtn = document.getElementById("retenClearBtn");
+const retenTableBody = document.getElementById("retenTableBody");
+const retenTotalSpan = document.getElementById("retenTotal");
+
+/* ========== HELPERS ==========
+   comisión SOLO sobre servicio: qty * unitPrice (NO incluye tip) */
+function serviceSubtotal(t) {
+  const q = Number(t.quantity || 0);
+  const u = Number(t.unitPrice || 0);
+  const s = q * u;
+  return isFinite(s) ? s : 0;
+}
+
+function getCommissionRateForTech(tech) {
+  if (!state.commissionRates) return 0;
+  if (tech && state.commissionRates[tech] != null) return Number(state.commissionRates[tech]) || 0;
+  return Number(state.commissionRates.default) || 0;
+}
+
+/* ========== RENDER (branding + tickets + caja) ========== */
 function renderBranding() {
   appNameEditable.textContent = state.appName || "Nexus Salon";
   pinAppNameTitle.textContent = state.appName || "Nexus Salon";
@@ -178,9 +205,7 @@ function renderBranding() {
   footerTextInput.value = state.footerText || "© 2025 Nexus Salon — Sistema de tickets";
   footerTextSpan.textContent = state.footerText || "© 2025 Nexus Salon — Sistema de tickets";
 
-  const logoSrc = state.logoUrl && state.logoUrl.trim() !== ""
-    ? state.logoUrl.trim()
-    : "assets/logo.png";
+  const logoSrc = state.logoUrl && state.logoUrl.trim() !== "" ? state.logoUrl.trim() : "assets/logo.png";
   appLogoImg.src = logoSrc;
   pinLogoImg.src = logoSrc;
 
@@ -217,26 +242,19 @@ function renderTicketsTable(listOverride) {
         <td>${t.paymentMethod || ""}</td>
         <td>$${Number(t.totalAmount || 0).toFixed(2)}</td>
         <td>
-          <button class="btn-table edit" data-action="edit" data-number="${t.number}">
-            Editar
-          </button>
-          <button class="btn-table delete" data-action="delete" data-number="${t.number}">
-            X
-          </button>
+          <button class="btn-table edit" data-action="edit" data-number="${t.number}">Editar</button>
+          <button class="btn-table delete" data-action="delete" data-number="${t.number}">X</button>
         </td>
       `;
       ticketsTableBody.appendChild(tr);
     });
 }
 
-/* CAJA: totales por método */
 function computeCajaTotals() {
   const start = cajaStartInput.value;
   const end = cajaEndInput.value;
 
-  let efectivo = 0;
-  let ath = 0;
-  let tarjeta = 0;
+  let efectivo = 0, ath = 0, tarjeta = 0;
 
   state.tickets.forEach((t) => {
     if (!t.date) return;
@@ -257,19 +275,14 @@ function computeCajaTotals() {
   cajaTotalAllSpan.textContent = `$${all.toFixed(2)}`;
 }
 
-/* ========== COMISIONES ========== */
-function getCommissionRateForTech(tech) {
-  if (!state.commissionRates) return 0;
-  if (tech && state.commissionRates[tech] != null) return Number(state.commissionRates[tech]) || 0;
-  return Number(state.commissionRates.default) || 0;
-}
-
+/* ========== COMISIONES (SIN PROPINA) ========== */
 function getFilteredTicketsForCommissions() {
   const start = comiStartInput ? comiStartInput.value : "";
   const end = comiEndInput ? comiEndInput.value : "";
   const tech = comiTechSelect ? comiTechSelect.value : "";
 
-  return (state.tickets || []).filter((t) => {
+  return state.tickets.filter((t) => {
+    if (!t.date) return false;
     if (start && t.date < start) return false;
     if (end && t.date > end) return false;
     if (tech && t.technician !== tech) return false;
@@ -281,36 +294,31 @@ function renderCommissionsSummary() {
   if (!comiTableBody || !comiTotalSpan) return;
 
   let list = getFilteredTicketsForCommissions();
-
   const hasFilters =
     (comiStartInput && comiStartInput.value) ||
     (comiEndInput && comiEndInput.value) ||
     (comiTechSelect && comiTechSelect.value);
 
-  if (!list.length && !hasFilters && state.tickets && state.tickets.length) {
-    list = state.tickets.slice();
-  }
+  if (!list.length && !hasFilters && state.tickets.length) list = state.tickets.slice();
 
   const byTech = {};
   let grandCommission = 0;
 
   list.forEach((t) => {
     const tech = t.technician || "Sin técnica";
-    const total = Number(t.totalAmount || 0);
+    const base = serviceSubtotal(t); // ✅ NO incluye tip
     const rate = getCommissionRateForTech(tech);
-    const commission = (total * rate) / 100;
+    const commission = (base * rate) / 100;
 
-    if (!byTech[tech]) {
-      byTech[tech] = { technician: tech, totalSales: 0, totalCommission: 0, rate };
-    }
-    byTech[tech].totalSales += total;
+    if (!byTech[tech]) byTech[tech] = { technician: tech, totalSales: 0, totalCommission: 0, rate };
+    byTech[tech].totalSales += base;
     byTech[tech].totalCommission += commission;
     grandCommission += commission;
   });
 
   const rows = Object.values(byTech).sort((a, b) => a.technician.localeCompare(b.technician));
-
   comiTableBody.innerHTML = "";
+
   rows.forEach((row) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -325,66 +333,128 @@ function renderCommissionsSummary() {
   comiTotalSpan.textContent = `$${grandCommission.toFixed(2)}`;
 }
 
-/* ✅ NUEVO: RETENCIONES 10% (DESPUÉS DE COMISIÓN, PROPINA EXCLUIDA) */
-function renderRetenciones() {
-  if (!retTableBody || !retTotalSpan) return;
+/* ========== PROPINA (TAB NUEVA) ========== */
+function getWeekKey(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
 
-  const start = retStartInput ? retStartInput.value : "";
-  const end = retEndInput ? retEndInput.value : "";
-  const techFilter = retTechSelect ? retTechSelect.value : "";
+function getFilteredTicketsForTips() {
+  const start = tipsStartInput ? tipsStartInput.value : "";
+  const end = tipsEndInput ? tipsEndInput.value : "";
+  const tech = tipsTechSelect ? tipsTechSelect.value : "";
 
-  const byTech = {};
-  let totalRetention = 0;
+  return state.tickets.filter((t) => {
+    if (!t.date) return false;
+    if (start && t.date < start) return false;
+    if (end && t.date > end) return false;
+    if (tech && t.technician !== tech) return false;
+    return true;
+  });
+}
 
-  (state.tickets || []).forEach((t) => {
-    if (start && t.date < start) return;
-    if (end && t.date > end) return;
-    if (techFilter && t.technician !== techFilter) return;
+function renderTipsSummary() {
+  if (!tipsTableBody || !tipsTotalSpan) return;
 
-    const tech = t.technician || "Sin técnica";
+  const group = (tipsGroupSelect && tipsGroupSelect.value) ? tipsGroupSelect.value : "tech";
+  const list = getFilteredTicketsForTips();
 
-    const total = Number(t.totalAmount || 0);
+  const map = new Map();
+  let totalTips = 0;
+
+  list.forEach((t) => {
     const tip = Number(t.tipAmount || 0);
+    if (!tip) return;
 
-    // base sin propina (no se comisiona ni se retiene sobre propina)
-    const base = total - tip;
+    let key = "Sin grupo";
+    if (group === "tech") key = t.technician || "Sin técnica";
+    else if (group === "day") key = t.date || "Sin fecha";
+    else if (group === "week") key = t.date ? getWeekKey(t.date) : "Sin semana";
 
+    map.set(key, (map.get(key) || 0) + tip);
+    totalTips += tip;
+  });
+
+  const rows = Array.from(map.entries())
+    .map(([k, v]) => ({ key: k, total: v }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+
+  tipsTableBody.innerHTML = "";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.key}</td>
+      <td>$${r.total.toFixed(2)}</td>
+    `;
+    tipsTableBody.appendChild(tr);
+  });
+
+  tipsTotalSpan.textContent = `$${totalTips.toFixed(2)}`;
+}
+
+/* ========== RETENCIONES 10% (TAB NUEVA) ==========
+   Retención = 10% de la comisión, Neto = Comisión - Retención */
+function getFilteredTicketsForReten() {
+  const start = retenStartInput ? retenStartInput.value : "";
+  const end = retenEndInput ? retenEndInput.value : "";
+  const tech = retenTechSelect ? retenTechSelect.value : "";
+
+  return state.tickets.filter((t) => {
+    if (!t.date) return false;
+    if (start && t.date < start) return false;
+    if (end && t.date > end) return false;
+    if (tech && t.technician !== tech) return false;
+    return true;
+  });
+}
+
+function renderRetencionesSummary() {
+  if (!retenTableBody || !retenTotalSpan) return;
+
+  const list = getFilteredTicketsForReten();
+  const byTech = {};
+  let netGrand = 0;
+
+  list.forEach((t) => {
+    const tech = t.technician || "Sin técnica";
+    const base = serviceSubtotal(t); // ✅ sin propina
     const rate = getCommissionRateForTech(tech);
     const commission = (base * rate) / 100;
-
-    const net = base - commission;     // pago neto luego de comisión
-    const retention = net * 0.10;      // 10% hacienda
-    const finalPay = net - retention;  // pago final a la técnica
+    const reten = commission * 0.10;
+    const net = commission - reten;
 
     if (!byTech[tech]) {
-      byTech[tech] = { base: 0, commission: 0, retention: 0, final: 0 };
+      byTech[tech] = { technician: tech, base: 0, rate, commission: 0, reten: 0, net: 0 };
     }
     byTech[tech].base += base;
     byTech[tech].commission += commission;
-    byTech[tech].retention += retention;
-    byTech[tech].final += finalPay;
-
-    totalRetention += retention;
+    byTech[tech].reten += reten;
+    byTech[tech].net += net;
+    netGrand += net;
   });
 
-  retTableBody.innerHTML = "";
+  const rows = Object.values(byTech).sort((a, b) => a.technician.localeCompare(b.technician));
 
-  Object.keys(byTech)
-    .sort((a, b) => a.localeCompare(b))
-    .forEach((tech) => {
-      const r = byTech[tech];
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${tech}</td>
-        <td>$${r.base.toFixed(2)}</td>
-        <td>$${r.commission.toFixed(2)}</td>
-        <td>$${r.retention.toFixed(2)}</td>
-        <td>$${r.final.toFixed(2)}</td>
-      `;
-      retTableBody.appendChild(tr);
-    });
+  retenTableBody.innerHTML = "";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.technician}</td>
+      <td>$${r.base.toFixed(2)}</td>
+      <td>${(r.rate ?? getCommissionRateForTech(r.technician)).toFixed(1)}%</td>
+      <td>$${r.commission.toFixed(2)}</td>
+      <td>$${r.reten.toFixed(2)}</td>
+      <td>$${r.net.toFixed(2)}</td>
+    `;
+    retenTableBody.appendChild(tr);
+  });
 
-  retTotalSpan.textContent = `$${totalRetention.toFixed(2)}`;
+  retenTotalSpan.textContent = `$${netGrand.toFixed(2)}`;
 }
 
 /* ========== VISTAS / PÁGINAS ========== */
@@ -395,13 +465,11 @@ function showPinScreen() {
   pinInput.value = "";
   pinError.textContent = "";
 }
-
 function showAuthScreen() {
   pinScreen.classList.add("hidden");
   authScreen.classList.remove("hidden");
   appShell.classList.add("hidden");
 }
-
 function showAppShell() {
   pinScreen.classList.add("hidden");
   authScreen.classList.add("hidden");
@@ -418,17 +486,14 @@ function setActivePage(pageName) {
   });
 
   if (pageName === "comisiones") renderCommissionsSummary();
-  // ✅ NUEVO
-  if (pageName === "retenciones") renderRetenciones();
+  if (pageName === "propinas") renderTipsSummary();
+  if (pageName === "retenciones") renderRetencionesSummary();
 }
 
 /* ========== PIN ========== */
 function handlePinEnter() {
   const v = (pinInput.value || "").trim();
-  if (!v) {
-    pinError.textContent = "Ingrese el PIN.";
-    return;
-  }
+  if (!v) return (pinError.textContent = "Ingrese el PIN.");
   if (v === state.pin) {
     pinError.textContent = "";
     if (state.user) showAppShell();
@@ -438,15 +503,7 @@ function handlePinEnter() {
   }
 }
 
-/* ========== FIRESTORE: REFERENCIAS COMPARTIDAS ========== */
-function ticketsCollectionRef() {
-  return db.collection("salonTickets");
-}
-function brandingDocRef() {
-  return db.collection("branding").doc("salon");
-}
-
-/* ========== AUTH GOOGLE + FIRESTORE LISTEN ========== */
+/* ========== AUTH + LISTENER ========== */
 function startTicketsListener() {
   if (state.unsubscribeTickets) {
     state.unsubscribeTickets();
@@ -460,11 +517,13 @@ function startTicketsListener() {
         snap.forEach((doc) => arr.push(doc.data()));
         state.tickets = arr;
         saveState();
+
         renderTicketNumber();
         renderTicketsTable();
         computeCajaTotals();
         renderCommissionsSummary();
-        renderRetenciones(); // ✅ NUEVO: mantener actualizado
+        renderTipsSummary();
+        renderRetencionesSummary();
       },
       (err) => console.error("onSnapshot error", err)
     );
@@ -473,9 +532,8 @@ function startTicketsListener() {
 async function signInWithGoogle() {
   try {
     const result = await auth.signInWithPopup(googleProvider);
-    const user = result.user;
-    state.user = user;
-    userEmailSpan.textContent = user.email || "";
+    state.user = result.user;
+    userEmailSpan.textContent = state.user.email || "";
     saveState();
     await loadBrandingFromCloud();
     startTicketsListener();
@@ -488,10 +546,7 @@ async function signInWithGoogle() {
 
 async function signOutAndReset() {
   try { await auth.signOut(); } catch (e) { console.error("Error signOut", e); }
-  if (state.unsubscribeTickets) {
-    state.unsubscribeTickets();
-    state.unsubscribeTickets = null;
-  }
+  if (state.unsubscribeTickets) { state.unsubscribeTickets(); state.unsubscribeTickets = null; }
   state.user = null;
   userEmailSpan.textContent = "Sin conexión a Google";
   saveState();
@@ -558,16 +613,8 @@ function collectTicketFromForm() {
   }
 
   return {
-    number,
-    date,
-    clientName,
-    technician,
-    paymentMethod,
-    serviceDesc,
-    quantity,
-    unitPrice,
-    tipAmount,
-    totalAmount,
+    number, date, clientName, technician, paymentMethod, serviceDesc,
+    quantity, unitPrice, tipAmount, totalAmount,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
 }
@@ -607,7 +654,6 @@ async function loadBrandingFromCloud() {
       if (data.pdfHeaderText !== undefined) state.pdfHeaderText = data.pdfHeaderText;
       if (data.pdfFooterText !== undefined) state.pdfFooterText = data.pdfFooterText;
       if (data.footerText !== undefined) state.footerText = data.footerText;
-
       if (data.commissionRates !== undefined) {
         state.commissionRates = {
           Cynthia: data.commissionRates.Cynthia ?? 40,
@@ -616,7 +662,6 @@ async function loadBrandingFromCloud() {
           default: data.commissionRates.default ?? 30
         };
       }
-
       saveState();
       renderBranding();
     }
@@ -637,12 +682,7 @@ async function saveBrandingToCloud() {
       pdfHeaderText: state.pdfHeaderText || "",
       pdfFooterText: state.pdfFooterText || "",
       footerText: state.footerText || "",
-      commissionRates: state.commissionRates || {
-        Cynthia: 40,
-        Carmen: 35,
-        Yerika: 35,
-        default: 30
-      }
+      commissionRates: state.commissionRates || { Cynthia: 40, Carmen: 35, Yerika: 35, default: 30 }
     };
     await brandingDocRef().set(payload, { merge: true });
     brandingStatus.textContent = "Branding guardado en Firebase.";
@@ -658,7 +698,8 @@ function getFilteredTickets() {
   const end = filterEndInput.value;
   const tech = filterTechSelect.value;
 
-  return (state.tickets || []).filter((t) => {
+  return state.tickets.filter((t) => {
+    if (!t.date) return false;
     if (start && t.date < start) return false;
     if (end && t.date > end) return false;
     if (tech && t.technician !== tech) return false;
@@ -666,33 +707,18 @@ function getFilteredTickets() {
   });
 }
 
-/* ========== PDF + BACKUP JSON ========== */
+/* ========== PDF + BACKUP JSON (igual que el tuyo) ========== */
 function exportTicketsToPDF() {
   const jsPDFLib = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPDFLib) {
-    alert("La librería jsPDF no se cargó.");
-    return;
-  }
+  if (!jsPDFLib) return alert("La librería jsPDF no se cargó.");
 
   const list = getFilteredTickets();
-  if (!list.length) {
-    alert("No hay tickets para exportar con el filtro actual.");
-    return;
-  }
+  if (!list.length) return alert("No hay tickets para exportar con el filtro actual.");
 
   const doc = new jsPDFLib({ orientation: "p", unit: "mm", format: "a4" });
   const marginLeft = 12;
 
-  const col = {
-    num: marginLeft,
-    date: marginLeft + 12,
-    client: marginLeft + 38,
-    tech: marginLeft + 80,
-    service: marginLeft + 112,
-    method: marginLeft + 150,
-    total: 200
-  };
-
+  const col = { num: marginLeft, date: marginLeft + 12, client: marginLeft + 38, tech: marginLeft + 80, service: marginLeft + 112, method: marginLeft + 150, total: 200 };
   let y = 14;
 
   doc.setFont("helvetica", "bold");
@@ -706,9 +732,7 @@ function exportTicketsToPDF() {
     const lines = doc.splitTextToSize(state.pdfHeaderText, 180);
     doc.text(lines, marginLeft, y);
     y += lines.length * 4 + 2;
-  } else {
-    y += 2;
-  }
+  } else y += 2;
 
   const now = new Date();
   doc.text(`Generado: ${now.toLocaleString()}`, marginLeft, y);
@@ -729,10 +753,7 @@ function exportTicketsToPDF() {
   let grandTotal = 0;
 
   list.forEach((t) => {
-    if (y > 270) {
-      doc.addPage();
-      y = 14;
-    }
+    if (y > 270) { doc.addPage(); y = 14; }
 
     const total = Number(t.totalAmount || 0);
     grandTotal += total;
@@ -744,15 +765,10 @@ function exportTicketsToPDF() {
     doc.text(String(t.serviceDesc || "").substring(0, 20), col.service, y);
     doc.text(String(t.paymentMethod || ""), col.method, y);
     doc.text(`$${total.toFixed(2)}`, col.total, y, { align: "right" });
-
     y += 4;
   });
 
-  if (y > 260) {
-    doc.addPage();
-    y = 20;
-  }
-
+  if (y > 260) { doc.addPage(); y = 20; }
   y += 6;
 
   doc.setFont("helvetica", "bold");
@@ -770,10 +786,8 @@ function exportTicketsToPDF() {
 
 function downloadBackupJson() {
   const list = getFilteredTickets();
-  if (!list.length) {
-    alert("No hay tickets para exportar con el filtro actual.");
-    return;
-  }
+  if (!list.length) return alert("No hay tickets para exportar con el filtro actual.");
+
   const blob = new Blob([JSON.stringify(list, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -852,7 +866,6 @@ tipAmountInput.addEventListener("input", recalcTotal);
 saveTicketBtn.addEventListener("click", (e) => { e.preventDefault(); saveTicket(); });
 
 applyFilterBtn.addEventListener("click", () => { renderTicketsTable(getFilteredTickets()); });
-
 clearFilterBtn.addEventListener("click", () => {
   filterStartInput.value = "";
   filterEndInput.value = "";
@@ -860,8 +873,7 @@ clearFilterBtn.addEventListener("click", () => {
   renderTicketsTable();
 });
 
-cajaApplyBtn.addEventListener("click", () => { computeCajaTotals(); });
-
+cajaApplyBtn.addEventListener("click", () => computeCajaTotals());
 cajaClearBtn.addEventListener("click", () => {
   const today = new Date().toISOString().slice(0, 10);
   cajaStartInput.value = today;
@@ -874,21 +886,32 @@ backupJsonBtn.addEventListener("click", downloadBackupJson);
 
 if (comiApplyBtn) comiApplyBtn.addEventListener("click", () => renderCommissionsSummary());
 if (comiClearBtn) comiClearBtn.addEventListener("click", () => {
-  if (comiStartInput) comiStartInput.value = "";
-  if (comiEndInput) comiEndInput.value = "";
-  if (comiTechSelect) comiTechSelect.value = "";
+  comiStartInput.value = "";
+  comiEndInput.value = "";
+  comiTechSelect.value = "";
   renderCommissionsSummary();
 });
 
-// ✅ NUEVO: eventos retenciones
-if (retApplyBtn) retApplyBtn.addEventListener("click", () => renderRetenciones());
-if (retClearBtn) retClearBtn.addEventListener("click", () => {
-  if (retStartInput) retStartInput.value = "";
-  if (retEndInput) retEndInput.value = "";
-  if (retTechSelect) retTechSelect.value = "";
-  renderRetenciones();
+// Propinas
+if (tipsApplyBtn) tipsApplyBtn.addEventListener("click", () => renderTipsSummary());
+if (tipsClearBtn) tipsClearBtn.addEventListener("click", () => {
+  tipsStartInput.value = "";
+  tipsEndInput.value = "";
+  tipsTechSelect.value = "";
+  tipsGroupSelect.value = "tech";
+  renderTipsSummary();
 });
 
+// Retenciones
+if (retenApplyBtn) retenApplyBtn.addEventListener("click", () => renderRetencionesSummary());
+if (retenClearBtn) retenClearBtn.addEventListener("click", () => {
+  retenStartInput.value = "";
+  retenEndInput.value = "";
+  retenTechSelect.value = "";
+  renderRetencionesSummary();
+});
+
+/* Editar / eliminar desde la tabla */
 ticketsTableBody.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
@@ -897,7 +920,7 @@ ticketsTableBody.addEventListener("click", async (e) => {
   const number = Number(btn.dataset.number);
   if (!number) return;
 
-  const ticket = (state.tickets || []).find((t) => Number(t.number) === number);
+  const ticket = state.tickets.find((t) => Number(t.number) === number);
   if (!ticket) return;
 
   if (action === "edit") {
@@ -927,10 +950,8 @@ ticketsTableBody.addEventListener("click", async (e) => {
   }
 
   if (action === "delete") {
-    if (!state.user) {
-      alert("Conéctate con Google para eliminar tickets.");
-      return;
-    }
+    if (!state.user) return alert("Conéctate con Google para eliminar tickets.");
+
     const ok = confirm(`¿Eliminar el ticket #${number}? Esta acción no se puede deshacer.`);
     if (!ok) return;
 
@@ -960,9 +981,7 @@ function init() {
   showPinScreen();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker
-      .register("service-worker.js")
-      .catch((err) => console.error("SW error", err));
+    navigator.serviceWorker.register("service-worker.js").catch((err) => console.error("SW error", err));
   }
 }
 
