@@ -1,8 +1,6 @@
-// app.js — Nexus Salon (Firestore, PIN, páginas + Caja + PWA + Comisiones + Propinas)
+// app.js — Nexus Salon (Firestore, PIN, páginas + Caja + PWA)
 
-// =========================
-// CONFIG FIREBASE
-// =========================
+/* ========== CONFIG FIREBASE ========== */
 const firebaseConfig = {
   apiKey: "AIzaSyCCYTfZGh_Cmtb4Qx4JT9Sma5Wf5BDzIdI",
   authDomain: "nexus-salon.firebaseapp.com",
@@ -17,9 +15,7 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// =========================
-// ESTADO LOCAL
-// =========================
+/* ========== ESTADO LOCAL ========== */
 const LOCAL_KEY = "nexus_salon_state_v3";
 
 let state = {
@@ -40,7 +36,6 @@ let state = {
   unsubscribeTickets: null
 };
 
-// Ticket en edición
 let currentEditingNumber = null;
 
 function loadState() {
@@ -50,7 +45,12 @@ function loadState() {
       const parsed = JSON.parse(raw);
       state = { ...state, ...parsed };
       if (!state.commissionRates) {
-        state.commissionRates = { Cynthia: 40, Carmen: 35, Yerika: 35, default: 30 };
+        state.commissionRates = {
+          Cynthia: 40,
+          Carmen: 35,
+          Yerika: 35,
+          default: 30
+        };
       }
     }
   } catch (e) {
@@ -65,9 +65,7 @@ function saveState() {
   localStorage.setItem(LOCAL_KEY, JSON.stringify(copy));
 }
 
-// =========================
-// DOM
-// =========================
+/* ========== DOM ========== */
 const pinScreen = document.getElementById("pinScreen");
 const authScreen = document.getElementById("authScreen");
 const appShell = document.getElementById("appShell");
@@ -92,12 +90,13 @@ const pages = {
   dashboard: document.getElementById("page-dashboard"),
   historial: document.getElementById("page-historial"),
   caja: document.getElementById("page-caja"),
-  propinas: document.getElementById("page-propinas"), // ✅ nuevo
   config: document.getElementById("page-config"),
-  comisiones: document.getElementById("page-comisiones")
+  comisiones: document.getElementById("page-comisiones"),
+  // ✅ NUEVO
+  retenciones: document.getElementById("page-retenciones")
 };
 
-// Dashboard
+// dashboard form
 const ticketNumberInput = document.getElementById("ticketNumber");
 const ticketDateInput = document.getElementById("ticketDate");
 const clientNameInput = document.getElementById("clientName");
@@ -113,7 +112,7 @@ const newTicketBtn = document.getElementById("newTicketBtn");
 const saveTicketBtn = document.getElementById("saveTicketBtn");
 const formMessage = document.getElementById("formMessage");
 
-// Historial
+// historial
 const ticketsTableBody = document.getElementById("ticketsTableBody");
 const filterStartInput = document.getElementById("filterStart");
 const filterEndInput = document.getElementById("filterEnd");
@@ -123,7 +122,7 @@ const clearFilterBtn = document.getElementById("clearFilterBtn");
 const exportPdfBtn = document.getElementById("exportPdfBtn");
 const backupJsonBtn = document.getElementById("backupJsonBtn");
 
-// Config
+// config
 const logoUrlInput = document.getElementById("logoUrlInput");
 const pdfHeaderTextArea = document.getElementById("pdfHeaderText");
 const pdfFooterTextArea = document.getElementById("pdfFooterText");
@@ -139,7 +138,7 @@ const commissionCarmenInput = document.getElementById("commissionCarmen");
 const commissionYerikaInput = document.getElementById("commissionYerika");
 const commissionDefaultInput = document.getElementById("commissionDefault");
 
-// Caja
+// caja
 const cajaStartInput = document.getElementById("cajaStart");
 const cajaEndInput = document.getElementById("cajaEnd");
 const cajaApplyBtn = document.getElementById("cajaApplyBtn");
@@ -149,7 +148,7 @@ const cajaTotalAthSpan = document.getElementById("cajaTotalAth");
 const cajaTotalCardSpan = document.getElementById("cajaTotalCard");
 const cajaTotalAllSpan = document.getElementById("cajaTotalAll");
 
-// Comisiones
+// comisiones
 const comiStartInput = document.getElementById("comiStart");
 const comiEndInput = document.getElementById("comiEnd");
 const comiTechSelect = document.getElementById("comiTech");
@@ -158,18 +157,17 @@ const comiClearBtn = document.getElementById("comiClearBtn");
 const comiTableBody = document.getElementById("comiTableBody");
 const comiTotalSpan = document.getElementById("comiTotal");
 
-// ✅ Propinas
-const tipsStartInput = document.getElementById("tipsStart");
-const tipsEndInput = document.getElementById("tipsEnd");
-const tipsTechSelect = document.getElementById("tipsTech");
-const tipsApplyBtn = document.getElementById("tipsApplyBtn");
-const tipsClearBtn = document.getElementById("tipsClearBtn");
-const tipsTableBody = document.getElementById("tipsTableBody");
-const tipsTotalSpan = document.getElementById("tipsTotal");
+// ✅ NUEVO: retenciones
+const retStartInput = document.getElementById("retStart");
+const retEndInput = document.getElementById("retEnd");
+const retTechSelect = document.getElementById("retTech");
+const retApplyBtn = document.getElementById("retApplyBtn");
+const retClearBtn = document.getElementById("retClearBtn");
+const retTableBody = document.getElementById("retTableBody");
+const retTotalSpan = document.getElementById("retTotal");
 
-// =========================
-// RENDER BRANDING
-// =========================
+/* ========== RENDER ==========
+   (branding + tickets + número + caja + comisiones) */
 function renderBranding() {
   appNameEditable.textContent = state.appName || "Nexus Salon";
   pinAppNameTitle.textContent = state.appName || "Nexus Salon";
@@ -180,7 +178,9 @@ function renderBranding() {
   footerTextInput.value = state.footerText || "© 2025 Nexus Salon — Sistema de tickets";
   footerTextSpan.textContent = state.footerText || "© 2025 Nexus Salon — Sistema de tickets";
 
-  const logoSrc = state.logoUrl && state.logoUrl.trim() !== "" ? state.logoUrl.trim() : "assets/logo.png";
+  const logoSrc = state.logoUrl && state.logoUrl.trim() !== ""
+    ? state.logoUrl.trim()
+    : "assets/logo.png";
   appLogoImg.src = logoSrc;
   pinLogoImg.src = logoSrc;
 
@@ -192,7 +192,8 @@ function renderBranding() {
 
 function nextTicketNumber() {
   if (!state.tickets.length) return 1;
-  return state.tickets.reduce((m, t) => Math.max(m, Number(t.number || 0)), 0) + 1;
+  const max = state.tickets.reduce((m, t) => Math.max(m, Number(t.number || 0)), 0);
+  return max + 1;
 }
 
 function renderTicketNumber() {
@@ -216,22 +217,26 @@ function renderTicketsTable(listOverride) {
         <td>${t.paymentMethod || ""}</td>
         <td>$${Number(t.totalAmount || 0).toFixed(2)}</td>
         <td>
-          <button class="btn-table edit" data-action="edit" data-number="${t.number}">Editar</button>
-          <button class="btn-table delete" data-action="delete" data-number="${t.number}">X</button>
+          <button class="btn-table edit" data-action="edit" data-number="${t.number}">
+            Editar
+          </button>
+          <button class="btn-table delete" data-action="delete" data-number="${t.number}">
+            X
+          </button>
         </td>
       `;
       ticketsTableBody.appendChild(tr);
     });
 }
 
-// =========================
-// CAJA
-// =========================
+/* CAJA: totales por método */
 function computeCajaTotals() {
   const start = cajaStartInput.value;
   const end = cajaEndInput.value;
 
-  let efectivo = 0, ath = 0, tarjeta = 0;
+  let efectivo = 0;
+  let ath = 0;
+  let tarjeta = 0;
 
   state.tickets.forEach((t) => {
     if (!t.date) return;
@@ -245,15 +250,14 @@ function computeCajaTotals() {
   });
 
   const all = efectivo + ath + tarjeta;
+
   cajaTotalCashSpan.textContent = `$${efectivo.toFixed(2)}`;
   cajaTotalAthSpan.textContent = `$${ath.toFixed(2)}`;
   cajaTotalCardSpan.textContent = `$${tarjeta.toFixed(2)}`;
   cajaTotalAllSpan.textContent = `$${all.toFixed(2)}`;
 }
 
-// =========================
-// COMISIONES (SIN PROPINA)
-// =========================
+/* ========== COMISIONES ========== */
 function getCommissionRateForTech(tech) {
   if (!state.commissionRates) return 0;
   if (tech && state.commissionRates[tech] != null) return Number(state.commissionRates[tech]) || 0;
@@ -265,8 +269,7 @@ function getFilteredTicketsForCommissions() {
   const end = comiEndInput ? comiEndInput.value : "";
   const tech = comiTechSelect ? comiTechSelect.value : "";
 
-  return state.tickets.filter((t) => {
-    if (!t.date) return false;
+  return (state.tickets || []).filter((t) => {
     if (start && t.date < start) return false;
     if (end && t.date > end) return false;
     if (tech && t.technician !== tech) return false;
@@ -278,37 +281,36 @@ function renderCommissionsSummary() {
   if (!comiTableBody || !comiTotalSpan) return;
 
   let list = getFilteredTicketsForCommissions();
+
   const hasFilters =
     (comiStartInput && comiStartInput.value) ||
     (comiEndInput && comiEndInput.value) ||
     (comiTechSelect && comiTechSelect.value);
 
-  if (!list.length && !hasFilters && state.tickets.length) list = state.tickets.slice();
+  if (!list.length && !hasFilters && state.tickets && state.tickets.length) {
+    list = state.tickets.slice();
+  }
 
   const byTech = {};
   let grandCommission = 0;
 
   list.forEach((t) => {
     const tech = t.technician || "Sin técnica";
-
-    const totalAmount = Number(t.totalAmount || 0);
-    const tipAmount = Number(t.tipAmount || 0);
-    const baseForCommission = Math.max(0, totalAmount - tipAmount); // ✅ SIN propina
-
+    const total = Number(t.totalAmount || 0);
     const rate = getCommissionRateForTech(tech);
-    const commission = (baseForCommission * rate) / 100;
+    const commission = (total * rate) / 100;
 
     if (!byTech[tech]) {
       byTech[tech] = { technician: tech, totalSales: 0, totalCommission: 0, rate };
     }
-    byTech[tech].totalSales += baseForCommission;
+    byTech[tech].totalSales += total;
     byTech[tech].totalCommission += commission;
     grandCommission += commission;
   });
 
   const rows = Object.values(byTech).sort((a, b) => a.technician.localeCompare(b.technician));
-  comiTableBody.innerHTML = "";
 
+  comiTableBody.innerHTML = "";
   rows.forEach((row) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -323,63 +325,69 @@ function renderCommissionsSummary() {
   comiTotalSpan.textContent = `$${grandCommission.toFixed(2)}`;
 }
 
-// =========================
-// PROPINAS (APARTE)
-// =========================
-function getFilteredTicketsForTips() {
-  const start = tipsStartInput ? tipsStartInput.value : "";
-  const end = tipsEndInput ? tipsEndInput.value : "";
-  const tech = tipsTechSelect ? tipsTechSelect.value : "";
+/* ✅ NUEVO: RETENCIONES 10% (DESPUÉS DE COMISIÓN, PROPINA EXCLUIDA) */
+function renderRetenciones() {
+  if (!retTableBody || !retTotalSpan) return;
 
-  return state.tickets.filter((t) => {
-    if (!t.date) return false;
-    if (start && t.date < start) return false;
-    if (end && t.date > end) return false;
-    if (tech && t.technician !== tech) return false;
-    return true;
-  });
-}
-
-function renderTipsSummary() {
-  if (!tipsTableBody || !tipsTotalSpan) return;
-
-  let list = getFilteredTicketsForTips();
-  const hasFilters =
-    (tipsStartInput && tipsStartInput.value) ||
-    (tipsEndInput && tipsEndInput.value) ||
-    (tipsTechSelect && tipsTechSelect.value);
-
-  if (!list.length && !hasFilters && state.tickets.length) list = state.tickets.slice();
+  const start = retStartInput ? retStartInput.value : "";
+  const end = retEndInput ? retEndInput.value : "";
+  const techFilter = retTechSelect ? retTechSelect.value : "";
 
   const byTech = {};
-  let grandTips = 0;
+  let totalRetention = 0;
 
-  list.forEach((t) => {
+  (state.tickets || []).forEach((t) => {
+    if (start && t.date < start) return;
+    if (end && t.date > end) return;
+    if (techFilter && t.technician !== techFilter) return;
+
     const tech = t.technician || "Sin técnica";
+
+    const total = Number(t.totalAmount || 0);
     const tip = Number(t.tipAmount || 0);
 
-    if (!byTech[tech]) byTech[tech] = 0;
-    byTech[tech] += tip;
-    grandTips += tip;
+    // base sin propina (no se comisiona ni se retiene sobre propina)
+    const base = total - tip;
+
+    const rate = getCommissionRateForTech(tech);
+    const commission = (base * rate) / 100;
+
+    const net = base - commission;     // pago neto luego de comisión
+    const retention = net * 0.10;      // 10% hacienda
+    const finalPay = net - retention;  // pago final a la técnica
+
+    if (!byTech[tech]) {
+      byTech[tech] = { base: 0, commission: 0, retention: 0, final: 0 };
+    }
+    byTech[tech].base += base;
+    byTech[tech].commission += commission;
+    byTech[tech].retention += retention;
+    byTech[tech].final += finalPay;
+
+    totalRetention += retention;
   });
 
-  const rows = Object.entries(byTech)
-    .map(([technician, tips]) => ({ technician, tips }))
-    .sort((a, b) => a.technician.localeCompare(b.technician));
+  retTableBody.innerHTML = "";
 
-  tipsTableBody.innerHTML = "";
-  rows.forEach((row) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${row.technician}</td><td>$${row.tips.toFixed(2)}</td>`;
-    tipsTableBody.appendChild(tr);
-  });
+  Object.keys(byTech)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((tech) => {
+      const r = byTech[tech];
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${tech}</td>
+        <td>$${r.base.toFixed(2)}</td>
+        <td>$${r.commission.toFixed(2)}</td>
+        <td>$${r.retention.toFixed(2)}</td>
+        <td>$${r.final.toFixed(2)}</td>
+      `;
+      retTableBody.appendChild(tr);
+    });
 
-  tipsTotalSpan.textContent = `$${grandTips.toFixed(2)}`;
+  retTotalSpan.textContent = `$${totalRetention.toFixed(2)}`;
 }
 
-// =========================
-// VISTAS
-// =========================
+/* ========== VISTAS / PÁGINAS ========== */
 function showPinScreen() {
   pinScreen.classList.remove("hidden");
   authScreen.classList.add("hidden");
@@ -404,22 +412,23 @@ function setActivePage(pageName) {
   Object.keys(pages).forEach((name) => {
     pages[name].classList.toggle("active-page", name === pageName);
   });
-
   navButtons.forEach((btn) => {
     const target = btn.getAttribute("data-page");
     btn.classList.toggle("nav-btn-active", target === pageName);
   });
 
   if (pageName === "comisiones") renderCommissionsSummary();
-  if (pageName === "propinas") renderTipsSummary();
+  // ✅ NUEVO
+  if (pageName === "retenciones") renderRetenciones();
 }
 
-// =========================
-// PIN
-// =========================
+/* ========== PIN ========== */
 function handlePinEnter() {
   const v = (pinInput.value || "").trim();
-  if (!v) return (pinError.textContent = "Ingrese el PIN.");
+  if (!v) {
+    pinError.textContent = "Ingrese el PIN.";
+    return;
+  }
   if (v === state.pin) {
     pinError.textContent = "";
     if (state.user) showAppShell();
@@ -429,9 +438,7 @@ function handlePinEnter() {
   }
 }
 
-// =========================
-// FIRESTORE REFS (COMPARTIDO)
-// =========================
+/* ========== FIRESTORE: REFERENCIAS COMPARTIDAS ========== */
 function ticketsCollectionRef() {
   return db.collection("salonTickets");
 }
@@ -439,15 +446,12 @@ function brandingDocRef() {
   return db.collection("branding").doc("salon");
 }
 
-// =========================
-// AUTH + LISTENER
-// =========================
+/* ========== AUTH GOOGLE + FIRESTORE LISTEN ========== */
 function startTicketsListener() {
   if (state.unsubscribeTickets) {
     state.unsubscribeTickets();
     state.unsubscribeTickets = null;
   }
-
   state.unsubscribeTickets = ticketsCollectionRef()
     .orderBy("number", "asc")
     .onSnapshot(
@@ -455,13 +459,12 @@ function startTicketsListener() {
         const arr = [];
         snap.forEach((doc) => arr.push(doc.data()));
         state.tickets = arr;
-
         saveState();
         renderTicketNumber();
         renderTicketsTable();
         computeCajaTotals();
         renderCommissionsSummary();
-        renderTipsSummary();
+        renderRetenciones(); // ✅ NUEVO: mantener actualizado
       },
       (err) => console.error("onSnapshot error", err)
     );
@@ -470,10 +473,10 @@ function startTicketsListener() {
 async function signInWithGoogle() {
   try {
     const result = await auth.signInWithPopup(googleProvider);
-    state.user = result.user;
-    userEmailSpan.textContent = state.user.email || "";
+    const user = result.user;
+    state.user = user;
+    userEmailSpan.textContent = user.email || "";
     saveState();
-
     await loadBrandingFromCloud();
     startTicketsListener();
     showAppShell();
@@ -485,7 +488,6 @@ async function signInWithGoogle() {
 
 async function signOutAndReset() {
   try { await auth.signOut(); } catch (e) { console.error("Error signOut", e); }
-
   if (state.unsubscribeTickets) {
     state.unsubscribeTickets();
     state.unsubscribeTickets = null;
@@ -510,15 +512,14 @@ auth.onAuthStateChanged((user) => {
   }
 });
 
-// =========================
-// TICKETS
-// =========================
+/* ========== DASHBOARD: TICKETS ========== */
 function recalcTotal() {
   const qty = Number(quantityInput.value || 0);
   const unit = Number(unitPriceInput.value || 0);
   const tip = Number(tipAmountInput.value || 0);
   const subtotal = qty * unit;
-  totalAmountInput.value = (subtotal + tip).toFixed(2);
+  const total = subtotal + tip;
+  totalAmountInput.value = total.toFixed(2);
 }
 
 function resetFormForNewTicket() {
@@ -557,8 +558,16 @@ function collectTicketFromForm() {
   }
 
   return {
-    number, date, clientName, technician, paymentMethod, serviceDesc,
-    quantity, unitPrice, tipAmount, totalAmount,
+    number,
+    date,
+    clientName,
+    technician,
+    paymentMethod,
+    serviceDesc,
+    quantity,
+    unitPrice,
+    tipAmount,
+    totalAmount,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
 }
@@ -586,9 +595,7 @@ async function saveTicket() {
   }
 }
 
-// =========================
-// BRANDING (COMPARTIDO)
-// =========================
+/* ========== BRANDING EN FIRESTORE (COMPARTIDO) ========== */
 async function loadBrandingFromCloud() {
   if (!state.user) return;
   try {
@@ -601,7 +608,7 @@ async function loadBrandingFromCloud() {
       if (data.pdfFooterText !== undefined) state.pdfFooterText = data.pdfFooterText;
       if (data.footerText !== undefined) state.footerText = data.footerText;
 
-      if (data.commissionRates) {
+      if (data.commissionRates !== undefined) {
         state.commissionRates = {
           Cynthia: data.commissionRates.Cynthia ?? 40,
           Carmen: data.commissionRates.Carmen ?? 35,
@@ -630,7 +637,12 @@ async function saveBrandingToCloud() {
       pdfHeaderText: state.pdfHeaderText || "",
       pdfFooterText: state.pdfFooterText || "",
       footerText: state.footerText || "",
-      commissionRates: state.commissionRates
+      commissionRates: state.commissionRates || {
+        Cynthia: 40,
+        Carmen: 35,
+        Yerika: 35,
+        default: 30
+      }
     };
     await brandingDocRef().set(payload, { merge: true });
     brandingStatus.textContent = "Branding guardado en Firebase.";
@@ -640,16 +652,13 @@ async function saveBrandingToCloud() {
   }
 }
 
-// =========================
-// FILTROS + PDF + BACKUP
-// =========================
+/* ========== FILTROS / LISTA ========== */
 function getFilteredTickets() {
   const start = filterStartInput.value;
   const end = filterEndInput.value;
   const tech = filterTechSelect.value;
 
-  return state.tickets.filter((t) => {
-    if (!t.date) return false;
+  return (state.tickets || []).filter((t) => {
     if (start && t.date < start) return false;
     if (end && t.date > end) return false;
     if (tech && t.technician !== tech) return false;
@@ -657,17 +666,33 @@ function getFilteredTickets() {
   });
 }
 
+/* ========== PDF + BACKUP JSON ========== */
 function exportTicketsToPDF() {
   const jsPDFLib = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPDFLib) return alert("La librería jsPDF no se cargó.");
+  if (!jsPDFLib) {
+    alert("La librería jsPDF no se cargó.");
+    return;
+  }
 
   const list = getFilteredTickets();
-  if (!list.length) return alert("No hay tickets para exportar con el filtro actual.");
+  if (!list.length) {
+    alert("No hay tickets para exportar con el filtro actual.");
+    return;
+  }
 
   const doc = new jsPDFLib({ orientation: "p", unit: "mm", format: "a4" });
   const marginLeft = 12;
 
-  const col = { num: marginLeft, date: marginLeft + 12, client: marginLeft + 38, tech: marginLeft + 80, service: marginLeft + 112, method: marginLeft + 150, total: 200 };
+  const col = {
+    num: marginLeft,
+    date: marginLeft + 12,
+    client: marginLeft + 38,
+    tech: marginLeft + 80,
+    service: marginLeft + 112,
+    method: marginLeft + 150,
+    total: 200
+  };
+
   let y = 14;
 
   doc.setFont("helvetica", "bold");
@@ -681,9 +706,12 @@ function exportTicketsToPDF() {
     const lines = doc.splitTextToSize(state.pdfHeaderText, 180);
     doc.text(lines, marginLeft, y);
     y += lines.length * 4 + 2;
-  } else y += 2;
+  } else {
+    y += 2;
+  }
 
-  doc.text(`Generado: ${new Date().toLocaleString()}`, marginLeft, y);
+  const now = new Date();
+  doc.text(`Generado: ${now.toLocaleString()}`, marginLeft, y);
   y += 6;
 
   doc.setFont("helvetica", "bold");
@@ -697,10 +725,15 @@ function exportTicketsToPDF() {
   y += 4;
 
   doc.setFont("helvetica", "normal");
+
   let grandTotal = 0;
 
   list.forEach((t) => {
-    if (y > 270) { doc.addPage(); y = 14; }
+    if (y > 270) {
+      doc.addPage();
+      y = 14;
+    }
+
     const total = Number(t.totalAmount || 0);
     grandTotal += total;
 
@@ -711,11 +744,17 @@ function exportTicketsToPDF() {
     doc.text(String(t.serviceDesc || "").substring(0, 20), col.service, y);
     doc.text(String(t.paymentMethod || ""), col.method, y);
     doc.text(`$${total.toFixed(2)}`, col.total, y, { align: "right" });
+
     y += 4;
   });
 
-  if (y > 260) { doc.addPage(); y = 20; }
+  if (y > 260) {
+    doc.addPage();
+    y = 20;
+  }
+
   y += 6;
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.text(`GRAN TOTAL: $${grandTotal.toFixed(2)}`, marginLeft, y);
@@ -731,8 +770,10 @@ function exportTicketsToPDF() {
 
 function downloadBackupJson() {
   const list = getFilteredTickets();
-  if (!list.length) return alert("No hay tickets para exportar con el filtro actual.");
-
+  if (!list.length) {
+    alert("No hay tickets para exportar con el filtro actual.");
+    return;
+  }
   const blob = new Blob([JSON.stringify(list, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -744,9 +785,7 @@ function downloadBackupJson() {
   URL.revokeObjectURL(url);
 }
 
-// =========================
-// PIN
-// =========================
+/* ========== CAMBIAR PIN ========== */
 function changePin() {
   const newPin = (newPinInput.value || "").trim();
   if (!newPin || newPin.length < 4) {
@@ -759,9 +798,7 @@ function changePin() {
   newPinInput.value = "";
 }
 
-// =========================
-// EVENTOS
-// =========================
+/* ========== EVENTOS ========== */
 pinEnterBtn.addEventListener("click", handlePinEnter);
 pinInput.addEventListener("keyup", (e) => { if (e.key === "Enter") handlePinEnter(); });
 
@@ -770,7 +807,10 @@ authBackToPinBtn.addEventListener("click", showPinScreen);
 logoutBtn.addEventListener("click", signOutAndReset);
 
 navButtons.forEach((btn) => {
-  btn.addEventListener("click", () => setActivePage(btn.getAttribute("data-page")));
+  btn.addEventListener("click", () => {
+    const page = btn.getAttribute("data-page");
+    setActivePage(page);
+  });
 });
 
 appNameEditable.addEventListener("input", () => {
@@ -811,7 +851,8 @@ tipAmountInput.addEventListener("input", recalcTotal);
 
 saveTicketBtn.addEventListener("click", (e) => { e.preventDefault(); saveTicket(); });
 
-applyFilterBtn.addEventListener("click", () => renderTicketsTable(getFilteredTickets()));
+applyFilterBtn.addEventListener("click", () => { renderTicketsTable(getFilteredTickets()); });
+
 clearFilterBtn.addEventListener("click", () => {
   filterStartInput.value = "";
   filterEndInput.value = "";
@@ -819,7 +860,8 @@ clearFilterBtn.addEventListener("click", () => {
   renderTicketsTable();
 });
 
-cajaApplyBtn.addEventListener("click", () => computeCajaTotals());
+cajaApplyBtn.addEventListener("click", () => { computeCajaTotals(); });
+
 cajaClearBtn.addEventListener("click", () => {
   const today = new Date().toISOString().slice(0, 10);
   cajaStartInput.value = today;
@@ -832,23 +874,21 @@ backupJsonBtn.addEventListener("click", downloadBackupJson);
 
 if (comiApplyBtn) comiApplyBtn.addEventListener("click", () => renderCommissionsSummary());
 if (comiClearBtn) comiClearBtn.addEventListener("click", () => {
-  comiStartInput.value = "";
-  comiEndInput.value = "";
-  comiTechSelect.value = "";
+  if (comiStartInput) comiStartInput.value = "";
+  if (comiEndInput) comiEndInput.value = "";
+  if (comiTechSelect) comiTechSelect.value = "";
   renderCommissionsSummary();
 });
 
-// ✅ eventos propinas
-if (tipsApplyBtn) tipsApplyBtn.addEventListener("click", () => renderTipsSummary());
-if (tipsClearBtn) tipsClearBtn.addEventListener("click", () => {
-  const today = new Date().toISOString().slice(0, 10);
-  tipsStartInput.value = today;
-  tipsEndInput.value = today;
-  tipsTechSelect.value = "";
-  renderTipsSummary();
+// ✅ NUEVO: eventos retenciones
+if (retApplyBtn) retApplyBtn.addEventListener("click", () => renderRetenciones());
+if (retClearBtn) retClearBtn.addEventListener("click", () => {
+  if (retStartInput) retStartInput.value = "";
+  if (retEndInput) retEndInput.value = "";
+  if (retTechSelect) retTechSelect.value = "";
+  renderRetenciones();
 });
 
-// Editar / eliminar en historial
 ticketsTableBody.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
@@ -857,7 +897,7 @@ ticketsTableBody.addEventListener("click", async (e) => {
   const number = Number(btn.dataset.number);
   if (!number) return;
 
-  const ticket = state.tickets.find((t) => Number(t.number) === number);
+  const ticket = (state.tickets || []).find((t) => Number(t.number) === number);
   if (!ticket) return;
 
   if (action === "edit") {
@@ -887,7 +927,10 @@ ticketsTableBody.addEventListener("click", async (e) => {
   }
 
   if (action === "delete") {
-    if (!state.user) return alert("Conéctate con Google para eliminar tickets.");
+    if (!state.user) {
+      alert("Conéctate con Google para eliminar tickets.");
+      return;
+    }
     const ok = confirm(`¿Eliminar el ticket #${number}? Esta acción no se puede deshacer.`);
     if (!ok) return;
 
@@ -900,9 +943,7 @@ ticketsTableBody.addEventListener("click", async (e) => {
   }
 });
 
-// =========================
-// INIT + PWA
-// =========================
+/* ========== INIT + PWA ========== */
 function init() {
   loadState();
   renderBranding();
@@ -914,18 +955,14 @@ function init() {
   cajaEndInput.value = today;
   computeCajaTotals();
 
-  // ✅ propinas por defecto hoy
-  if (tipsStartInput && tipsEndInput) {
-    tipsStartInput.value = today;
-    tipsEndInput.value = today;
-  }
-
   resetFormForNewTicket();
   setActivePage("dashboard");
   showPinScreen();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js").catch((err) => console.error("SW error", err));
+    navigator.serviceWorker
+      .register("service-worker.js")
+      .catch((err) => console.error("SW error", err));
   }
 }
 
