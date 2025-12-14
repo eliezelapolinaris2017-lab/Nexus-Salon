@@ -80,12 +80,10 @@
         <button data-page="dashboard" class="nav-btn nav-btn-active">Dashboard</button>
         <button data-page="historial" class="nav-btn">Historial</button>
         <button data-page="caja" class="nav-btn">Caja</button>
-
-        <!-- ✅ NUEVO: Propinas -->
-        <button data-page="propinas" class="nav-btn">Propinas</button>
-
         <button data-page="config" class="nav-btn">Configuración</button>
         <button data-page="comisiones" class="nav-btn">Comisiones</button>
+        <!-- ✅ NUEVO -->
+        <button data-page="retenciones" class="nav-btn">Retenciones</button>
       </div>
 
       <div class="topbar-right">
@@ -190,7 +188,6 @@
             </div>
           </div>
 
-          <!-- Filtros -->
           <div class="filters-row">
             <div class="filter-group">
               <label>Desde</label>
@@ -215,7 +212,6 @@
             </div>
           </div>
 
-          <!-- Tabla -->
           <div class="table-wrap">
             <table class="data-table">
               <thead>
@@ -280,65 +276,6 @@
           </div>
 
           <p class="msg-info small"></p>
-        </div>
-      </section>
-
-      <!-- ✅ NUEVO: PAGE PROPINAS -->
-      <section id="page-propinas" class="page">
-        <div class="panel wide">
-          <div class="panel-header">
-            <h2>Propinas</h2>
-            <p class="panel-subtitle">
-              Propinas se calculan aparte. No se descuentan de comisiones.
-            </p>
-          </div>
-
-          <div class="filters-row">
-            <div class="filter-group">
-              <label for="tipsStart">Desde</label>
-              <input type="date" id="tipsStart" class="field-input small">
-            </div>
-
-            <div class="filter-group">
-              <label for="tipsEnd">Hasta</label>
-              <input type="date" id="tipsEnd" class="field-input small">
-            </div>
-
-            <div class="filter-group">
-              <label for="tipsTech">Técnica</label>
-              <select id="tipsTech" class="field-input small">
-                <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
-              </select>
-            </div>
-
-            <div class="filter-group filter-actions">
-              <button id="tipsApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
-              <button id="tipsClearBtn" class="btn btn-small btn-text">Hoy</button>
-            </div>
-          </div>
-
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Técnica</th>
-                  <th>Total propinas</th>
-                </tr>
-              </thead>
-              <tbody id="tipsTableBody"></tbody>
-            </table>
-          </div>
-
-          <div class="caja-summary-grid">
-            <div class="caja-card total">
-              <h3>Total de propinas</h3>
-              <p id="tipsTotal" class="caja-amount">$0.00</p>
-              <span class="caja-badge">Suma de propinas según filtro</span>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -426,7 +363,7 @@
           <div class="panel-header">
             <h2>Comisiones por técnica</h2>
             <p class="panel-subtitle">
-              Comisiones se calculan sobre el total SIN propina.
+              Calcula comisiones por rango de fechas y por técnica según los tickets registrados.
             </p>
           </div>
 
@@ -463,7 +400,7 @@
                 <tr>
                   <th>Técnica</th>
                   <th>% Comisión</th>
-                  <th>Total vendido (sin propina)</th>
+                  <th>Total vendido</th>
                   <th>Comisión</th>
                 </tr>
               </thead>
@@ -476,6 +413,65 @@
               <h3>Comisión total a pagar</h3>
               <p id="comiTotal" class="caja-amount">$0.00</p>
               <span class="caja-badge">Suma de todas las técnicas filtradas</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ✅ NUEVO: PAGE RETENCIONES -->
+      <section id="page-retenciones" class="page">
+        <div class="panel wide">
+          <div class="panel-header">
+            <h2>Retenciones Hacienda (10%)</h2>
+            <p class="panel-subtitle">
+              Se calcula luego de comisión. Propinas excluidas.
+            </p>
+          </div>
+
+          <div class="filters-row">
+            <div class="filter-group">
+              <label>Desde</label>
+              <input id="retStart" type="date" class="field-input small">
+            </div>
+            <div class="filter-group">
+              <label>Hasta</label>
+              <input id="retEnd" type="date" class="field-input small">
+            </div>
+            <div class="filter-group">
+              <label>Técnica</label>
+              <select id="retTech" class="field-input small">
+                <option value="">Todas</option>
+                <option value="Cynthia">Cynthia</option>
+                <option value="Carmen">Carmen</option>
+                <option value="Yerika">Yerika</option>
+              </select>
+            </div>
+            <div class="filter-group filter-actions">
+              <button id="retApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
+              <button id="retClearBtn" class="btn btn-small btn-text">Limpiar</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Técnica</th>
+                  <th>Total base</th>
+                  <th>Comisión</th>
+                  <th>Retención 10%</th>
+                  <th>Pago final</th>
+                </tr>
+              </thead>
+              <tbody id="retTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="caja-summary-grid">
+            <div class="caja-card total">
+              <h3>Total retenido</h3>
+              <p id="retTotal" class="caja-amount">$0.00</p>
+              <span class="caja-badge">Total a remitir a Hacienda</span>
             </div>
           </div>
         </div>
