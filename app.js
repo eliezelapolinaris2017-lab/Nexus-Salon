@@ -1,6 +1,8 @@
-// app.js — Nexus Salon (Firestore, PIN, páginas + Caja + PWA)
+// app.js — Nexus Salon (Firestore + Google Auth + Login PIN por usuario + Roles + Propinas + Retenciones)
 
-/* ========== CONFIG FIREBASE ========== */
+// ========================
+// FIREBASE CONFIG
+// ========================
 const firebaseConfig = {
   apiKey: "AIzaSyCCYTfZGh_Cmtb4Qx4JT9Sma5Wf5BDzIdI",
   authDomain: "nexus-salon.firebaseapp.com",
@@ -15,71 +17,86 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-/* ========== ESTADO LOCAL ========== */
-const LOCAL_KEY = "nexus_salon_state_v3";
+// ========================
+// LOCAL STATE
+// ========================
+const LOCAL_KEY = "nexus_salon_state_v10";
 
 let state = {
-  pin: "1234",
   appName: "Nexus Salon",
   logoUrl: "",
   pdfHeaderText: "",
   pdfFooterText: "",
   footerText: "© 2025 Nexus Salon — Sistema de tickets",
+
+  // sesión interna (PIN por usuario)
+  session: null, // { name, role, technician }
+
   tickets: [],
-  commissionRates: {
-    Cynthia: 40,
-    Carmen: 35,
-    Yerika: 35,
-    default: 30
-  },
+  technicians: [], // { id, name, commission, active }
+  users: [],       // { id, name, pin, role, technician, active }
+
   user: null,
-  unsubscribeTickets: null
+
+  unsubscribeTickets: null,
+  unsubscribeTechs: null,
+  unsubscribeUsers: null
 };
 
+// edición
 let currentEditingNumber = null;
+let currentTechId = null;
+let currentUserId = null;
 
+// ========================
+// HELPERS: STORAGE
+// ========================
 function loadState() {
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       state = { ...state, ...parsed };
-      if (!state.commissionRates) {
-        state.commissionRates = { Cynthia: 40, Carmen: 35, Yerika: 35, default: 30 };
-      }
     }
   } catch (e) {
     console.error("Error leyendo localStorage", e);
   }
 }
-
 function saveState() {
   const copy = { ...state };
   delete copy.user;
   delete copy.unsubscribeTickets;
+  delete copy.unsubscribeTechs;
+  delete copy.unsubscribeUsers;
   localStorage.setItem(LOCAL_KEY, JSON.stringify(copy));
 }
 
-/* ========== FIRESTORE: REFERENCIAS COMPARTIDAS ========== */
-function ticketsCollectionRef() {
-  return db.collection("salonTickets");
-}
-function brandingDocRef() {
-  return db.collection("branding").doc("salon");
-}
+// ========================
+// FIRESTORE REFS
+// ========================
+function ticketsCollectionRef() { return db.collection("salonTickets"); }
+function brandingDocRef() { return db.collection("branding").doc("salon"); }
+function techniciansRef() { return db.collection("technicians"); }
+function usersRef() { return db.collection("users"); }
 
-/* ========== DOM ========== */
-const pinScreen = document.getElementById("pinScreen");
+// ========================
+// DOM
+// ========================
 const authScreen = document.getElementById("authScreen");
-const appShell = document.getElementById("appShell");
+const pinScreen  = document.getElementById("pinScreen");
+const appShell   = document.getElementById("appShell");
 
-const pinInput = document.getElementById("pinInput");
-const pinError = document.getElementById("pinError");
-const pinEnterBtn = document.getElementById("pinEnterBtn");
-
+// auth
 const googleSignInBtn = document.getElementById("googleSignInBtn");
-const authBackToPinBtn = document.getElementById("authBackToPinBtn");
 
+// login pin
+const loginName = document.getElementById("loginName");
+const loginPin  = document.getElementById("loginPin");
+const pinEnterBtn = document.getElementById("pinEnterBtn");
+const pinError = document.getElementById("pinError");
+const logoutBtnLogin = document.getElementById("logoutBtnLogin");
+
+// topbar
 const appNameEditable = document.getElementById("appNameEditable");
 const pinAppNameTitle = document.getElementById("pinAppName");
 const userEmailSpan = document.getElementById("userEmail");
@@ -87,19 +104,21 @@ const logoutBtn = document.getElementById("logoutBtn");
 const appLogoImg = document.getElementById("appLogo");
 const pinLogoImg = document.getElementById("pinLogo");
 const footerTextSpan = document.getElementById("footerText");
-const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
+const roleBadge = document.getElementById("roleBadge");
 
+// nav/pages
+const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
 const pages = {
   dashboard: document.getElementById("page-dashboard"),
   historial: document.getElementById("page-historial"),
   caja: document.getElementById("page-caja"),
-  config: document.getElementById("page-config"),
   comisiones: document.getElementById("page-comisiones"),
   propinas: document.getElementById("page-propinas"),
-  retenciones: document.getElementById("page-retenciones")
+  retenciones: document.getElementById("page-retenciones"),
+  config: document.getElementById("page-config")
 };
 
-// dashboard form
+// dashboard
 const ticketNumberInput = document.getElementById("ticketNumber");
 const ticketDateInput = document.getElementById("ticketDate");
 const clientNameInput = document.getElementById("clientName");
@@ -125,22 +144,6 @@ const clearFilterBtn = document.getElementById("clearFilterBtn");
 const exportPdfBtn = document.getElementById("exportPdfBtn");
 const backupJsonBtn = document.getElementById("backupJsonBtn");
 
-// config
-const logoUrlInput = document.getElementById("logoUrlInput");
-const pdfHeaderTextArea = document.getElementById("pdfHeaderText");
-const pdfFooterTextArea = document.getElementById("pdfFooterText");
-const footerTextInput = document.getElementById("footerTextInput");
-const newPinInput = document.getElementById("newPinInput");
-const changePinBtn = document.getElementById("changePinBtn");
-const pinChangeMessage = document.getElementById("pinChangeMessage");
-const saveBrandingBtn = document.getElementById("saveBrandingBtn");
-const brandingStatus = document.getElementById("brandingStatus");
-
-const commissionCynthiaInput = document.getElementById("commissionCynthia");
-const commissionCarmenInput = document.getElementById("commissionCarmen");
-const commissionYerikaInput = document.getElementById("commissionYerika");
-const commissionDefaultInput = document.getElementById("commissionDefault");
-
 // caja
 const cajaStartInput = document.getElementById("cajaStart");
 const cajaEndInput = document.getElementById("cajaEnd");
@@ -161,43 +164,90 @@ const comiTableBody = document.getElementById("comiTableBody");
 const comiTotalSpan = document.getElementById("comiTotal");
 
 // propinas
-const tipsStartInput = document.getElementById("tipsStart");
-const tipsEndInput = document.getElementById("tipsEnd");
-const tipsTechSelect = document.getElementById("tipsTech");
-const tipsGroupSelect = document.getElementById("tipsGroup");
-const tipsApplyBtn = document.getElementById("tipsApplyBtn");
-const tipsClearBtn = document.getElementById("tipsClearBtn");
+const tipStart = document.getElementById("tipStart");
+const tipEnd = document.getElementById("tipEnd");
+const tipGroupBy = document.getElementById("tipGroupBy");
+const tipApplyBtn = document.getElementById("tipApplyBtn");
+const tipClearBtn = document.getElementById("tipClearBtn");
 const tipsTableBody = document.getElementById("tipsTableBody");
-const tipsTotalSpan = document.getElementById("tipsTotal");
+const tipsTotal = document.getElementById("tipsTotal");
 
 // retenciones
-const retenStartInput = document.getElementById("retenStart");
-const retenEndInput = document.getElementById("retenEnd");
-const retenTechSelect = document.getElementById("retenTech");
-const retenApplyBtn = document.getElementById("retenApplyBtn");
-const retenClearBtn = document.getElementById("retenClearBtn");
-const retenTableBody = document.getElementById("retenTableBody");
-const retenTotalSpan = document.getElementById("retenTotal");
+const retStart = document.getElementById("retStart");
+const retEnd = document.getElementById("retEnd");
+const retTech = document.getElementById("retTech");
+const retApplyBtn = document.getElementById("retApplyBtn");
+const retClearBtn = document.getElementById("retClearBtn");
+const retTableBody = document.getElementById("retTableBody");
+const retTotal = document.getElementById("retTotal");
 
-/* ========== HELPERS ==========
-   comisión SOLO sobre servicio: qty * unitPrice (NO incluye tip) */
-function serviceSubtotal(t) {
-  const q = Number(t.quantity || 0);
-  const u = Number(t.unitPrice || 0);
-  const s = q * u;
-  return isFinite(s) ? s : 0;
+// config branding
+const logoUrlInput = document.getElementById("logoUrlInput");
+const pdfHeaderTextArea = document.getElementById("pdfHeaderText");
+const pdfFooterTextArea = document.getElementById("pdfFooterText");
+const footerTextInput = document.getElementById("footerTextInput");
+const saveBrandingBtn = document.getElementById("saveBrandingBtn");
+const brandingStatus = document.getElementById("brandingStatus");
+
+// config tech CRUD
+const techTableBody = document.getElementById("techTableBody");
+const techNameInput = document.getElementById("techNameInput");
+const techPercentInput = document.getElementById("techPercentInput");
+const techSaveBtn = document.getElementById("techSaveBtn");
+const techCancelBtn = document.getElementById("techCancelBtn");
+
+// config users CRUD
+const usersTableBody = document.getElementById("usersTableBody");
+const userNameInput = document.getElementById("userNameInput");
+const userPinInput = document.getElementById("userPinInput");
+const userTechSelect = document.getElementById("userTechSelect");
+const userCreateBtn = document.getElementById("userCreateBtn");
+const userCreateAdminBtn = document.getElementById("userCreateAdminBtn");
+const adminNote = document.getElementById("adminNote");
+
+// ========================
+// VIEWS
+// ========================
+function showAuth() {
+  authScreen.classList.remove("hidden");
+  pinScreen.classList.add("hidden");
+  appShell.classList.add("hidden");
+}
+function showPinLogin() {
+  authScreen.classList.add("hidden");
+  pinScreen.classList.remove("hidden");
+  appShell.classList.add("hidden");
+  pinError.textContent = "";
+  loginName.value = "";
+  loginPin.value = "";
+}
+function showApp() {
+  authScreen.classList.add("hidden");
+  pinScreen.classList.add("hidden");
+  appShell.classList.remove("hidden");
 }
 
-function getCommissionRateForTech(tech) {
-  if (!state.commissionRates) return 0;
-  if (tech && state.commissionRates[tech] != null) return Number(state.commissionRates[tech]) || 0;
-  return Number(state.commissionRates.default) || 0;
+function setActivePage(pageName) {
+  Object.keys(pages).forEach((name) => {
+    pages[name].classList.toggle("active-page", name === pageName);
+  });
+  navButtons.forEach((btn) => {
+    const target = btn.getAttribute("data-page");
+    btn.classList.toggle("nav-btn-active", target === pageName);
+  });
+
+  if (pageName === "comisiones") renderCommissionsSummary();
+  if (pageName === "propinas") renderTipsSummary();
+  if (pageName === "retenciones") renderRetentionsSummary();
 }
 
-/* ========== RENDER (branding + tickets + caja) ========== */
+// ========================
+// BRANDING / UI
+// ========================
 function renderBranding() {
-  appNameEditable.textContent = state.appName || "Nexus Salon";
-  pinAppNameTitle.textContent = state.appName || "Nexus Salon";
+  const name = state.appName || "Nexus Salon";
+  appNameEditable.textContent = name;
+  pinAppNameTitle.textContent = name;
 
   logoUrlInput.value = state.logoUrl || "";
   pdfHeaderTextArea.value = state.pdfHeaderText || "";
@@ -205,42 +255,659 @@ function renderBranding() {
   footerTextInput.value = state.footerText || "© 2025 Nexus Salon — Sistema de tickets";
   footerTextSpan.textContent = state.footerText || "© 2025 Nexus Salon — Sistema de tickets";
 
-  const logoSrc = state.logoUrl && state.logoUrl.trim() !== "" ? state.logoUrl.trim() : "assets/logo.png";
+  const logoSrc = state.logoUrl && state.logoUrl.trim() ? state.logoUrl.trim() : "assets/logo.png";
   appLogoImg.src = logoSrc;
   pinLogoImg.src = logoSrc;
 
-  if (commissionCynthiaInput) commissionCynthiaInput.value = state.commissionRates?.Cynthia ?? 40;
-  if (commissionCarmenInput) commissionCarmenInput.value = state.commissionRates?.Carmen ?? 35;
-  if (commissionYerikaInput) commissionYerikaInput.value = state.commissionRates?.Yerika ?? 35;
-  if (commissionDefaultInput) commissionDefaultInput.value = state.commissionRates?.default ?? 30;
+  // badge rol
+  if (state.session) {
+    roleBadge.textContent = state.session.role === "admin"
+      ? `Admin: ${state.session.name}`
+      : `Técnica: ${state.session.technician || state.session.name}`;
+  } else {
+    roleBadge.textContent = "—";
+  }
 }
 
+function applyRoleAccessUI() {
+  const isAdmin = state.session && state.session.role === "admin";
+  document.querySelectorAll(".nav-admin").forEach(btn => {
+    btn.classList.toggle("hidden", !isAdmin);
+  });
+
+  // Empleado: bloquea selector técnica
+  const isEmployee = state.session && state.session.role === "employee";
+  if (isEmployee) {
+    technicianSelect.disabled = true;
+    technicianCustomInput.disabled = true;
+  } else {
+    technicianSelect.disabled = false;
+    technicianCustomInput.disabled = false;
+  }
+
+  // Si empleado está en página admin, lo devolvemos
+  const adminPages = ["caja","comisiones","propinas","retenciones","config"];
+  if (!isAdmin) {
+    adminPages.forEach(p => pages[p] && pages[p].classList.remove("active-page"));
+    setActivePage("dashboard");
+  }
+}
+
+// ========================
+// TECHNICIANS / USERS SEED
+// ========================
+function getDefaultTechnicians() {
+  return [
+    { id: "cynthia", name: "Cynthia", commission: 40, active: true },
+    { id: "carmen", name: "Carmen", commission: 35, active: true },
+    { id: "yerika", name: "Yerika", commission: 35, active: true },
+  ];
+}
+async function ensureDefaultsInCloud() {
+  // Técnicas
+  const snap = await techniciansRef().limit(1).get();
+  if (snap.empty) {
+    const batch = db.batch();
+    getDefaultTechnicians().forEach(t => {
+      batch.set(techniciansRef().doc(t.id), { name: t.name, commission: t.commission, active: true });
+    });
+    await batch.commit();
+  }
+
+  // Admin inicial (si no existe ninguno)
+  const adminSnap = await usersRef().where("role", "==", "admin").limit(1).get();
+  if (adminSnap.empty) {
+    // admin por defecto: Admin / 1234
+    await usersRef().add({ name: "Admin", pin: "1234", role: "admin", technician: "", active: true, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }
+}
+
+// ========================
+// LISTENERS
+// ========================
+function startTicketsListener() {
+  if (state.unsubscribeTickets) { state.unsubscribeTickets(); state.unsubscribeTickets = null; }
+
+  state.unsubscribeTickets = ticketsCollectionRef()
+    .orderBy("number", "asc")
+    .onSnapshot((snap) => {
+      const arr = [];
+      snap.forEach((doc) => arr.push(doc.data()));
+      state.tickets = arr;
+      saveState();
+      renderTicketNumber();
+      renderTicketsTable();
+      computeCajaTotals();
+      renderCommissionsSummary();
+      renderTipsSummary();
+      renderRetentionsSummary();
+    }, (err) => console.error("tickets onSnapshot error", err));
+}
+
+function startTechsListener() {
+  if (state.unsubscribeTechs) { state.unsubscribeTechs(); state.unsubscribeTechs = null; }
+
+  state.unsubscribeTechs = techniciansRef()
+    .onSnapshot((snap) => {
+      const arr = [];
+      snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+      state.technicians = arr;
+      saveState();
+      renderTechniciansTable();
+      loadTechniciansIntoSelects();
+    }, (err) => console.error("techs onSnapshot error", err));
+}
+
+function startUsersListener() {
+  if (state.unsubscribeUsers) { state.unsubscribeUsers(); state.unsubscribeUsers = null; }
+
+  state.unsubscribeUsers = usersRef()
+    .onSnapshot((snap) => {
+      const arr = [];
+      snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+      state.users = arr;
+      saveState();
+      renderUsersTable();
+    }, (err) => console.error("users onSnapshot error", err));
+}
+
+// ========================
+// AUTH GOOGLE
+// ========================
+async function signInWithGoogle() {
+  try {
+    const result = await auth.signInWithPopup(googleProvider);
+    state.user = result.user;
+    userEmailSpan.textContent = state.user?.email || "";
+    saveState();
+
+    await ensureDefaultsInCloud();
+    await loadBrandingFromCloud();
+
+    startTicketsListener();
+    startTechsListener();
+    startUsersListener();
+
+    showPinLogin();
+  } catch (err) {
+    console.error("Google SignIn error", err);
+    alert("No se pudo iniciar sesión con Google.");
+  }
+}
+
+async function signOutGoogle() {
+  try { await auth.signOut(); } catch (e) { console.error(e); }
+
+  if (state.unsubscribeTickets) state.unsubscribeTickets();
+  if (state.unsubscribeTechs) state.unsubscribeTechs();
+  if (state.unsubscribeUsers) state.unsubscribeUsers();
+
+  state.unsubscribeTickets = null;
+  state.unsubscribeTechs = null;
+  state.unsubscribeUsers = null;
+
+  state.user = null;
+  state.session = null;
+
+  userEmailSpan.textContent = "Sin conexión";
+  saveState();
+  showAuth();
+}
+
+auth.onAuthStateChanged(async (user) => {
+  state.user = user || null;
+  if (!user) {
+    userEmailSpan.textContent = "Sin conexión";
+    showAuth();
+    return;
+  }
+  userEmailSpan.textContent = user.email || "";
+});
+
+// ========================
+// INTERNAL LOGIN (NAME + PIN)
+// ========================
+function normalizeName(s) {
+  return (s || "").trim().toLowerCase();
+}
+
+async function loginWithPin() {
+  const name = (loginName.value || "").trim();
+  const pin = (loginPin.value || "").trim();
+
+  if (!name || !pin) {
+    pinError.textContent = "Escribe tu nombre y PIN.";
+    return;
+  }
+
+  // buscar usuario por nombre (case-insensitive)
+  const found = state.users.find(u => normalizeName(u.name) === normalizeName(name) && String(u.pin || "") === String(pin));
+  if (!found) {
+    pinError.textContent = "Nombre o PIN incorrecto.";
+    return;
+  }
+  if (found.active === false) {
+    pinError.textContent = "Usuario desactivado. Contacta al admin.";
+    return;
+  }
+
+  state.session = {
+    name: found.name,
+    role: found.role || "employee",
+    technician: found.technician || found.name
+  };
+
+  saveState();
+  renderBranding();
+  applyRoleAccessUI();
+
+  // si empleado: fuerza técnica en dashboard
+  if (state.session.role === "employee") {
+    technicianSelect.value = state.session.technician;
+    technicianCustomInput.value = "";
+  }
+
+  showApp();
+  setActivePage("dashboard");
+}
+
+// ========================
+// BRANDING CLOUD
+// ========================
+async function loadBrandingFromCloud() {
+  try {
+    const snap = await brandingDocRef().get();
+    if (snap.exists) {
+      const data = snap.data() || {};
+      if (data.appName) state.appName = data.appName;
+      if (data.logoUrl !== undefined) state.logoUrl = data.logoUrl;
+      if (data.pdfHeaderText !== undefined) state.pdfHeaderText = data.pdfHeaderText;
+      if (data.pdfFooterText !== undefined) state.pdfFooterText = data.pdfFooterText;
+      if (data.footerText !== undefined) state.footerText = data.footerText;
+      saveState();
+      renderBranding();
+    }
+  } catch (e) {
+    console.error("Error branding cloud", e);
+  }
+}
+
+async function saveBrandingToCloud() {
+  if (!state.session || state.session.role !== "admin") {
+    brandingStatus.textContent = "Solo admin puede guardar configuración.";
+    return;
+  }
+  try {
+    const payload = {
+      appName: state.appName,
+      logoUrl: state.logoUrl || "",
+      pdfHeaderText: state.pdfHeaderText || "",
+      pdfFooterText: state.pdfFooterText || "",
+      footerText: state.footerText || ""
+    };
+    await brandingDocRef().set(payload, { merge: true });
+    brandingStatus.textContent = "Guardado.";
+  } catch (e) {
+    console.error("save branding error", e);
+    brandingStatus.textContent = "Error guardando.";
+  }
+}
+
+// ========================
+// TECHNICIANS UI/CRUD
+// ========================
+function getCommissionRateForTech(techName) {
+  const t = state.technicians.find(x => x.name === techName);
+  if (t && t.active !== false) return Number(t.commission || 0) || 0;
+  // si técnica no existe (tickets viejos), comisión 0 (o 30 si quieres)
+  return 0;
+}
+
+function loadTechniciansIntoSelects() {
+  const list = state.technicians
+    .filter(t => t.active !== false)
+    .slice()
+    .sort((a,b) => String(a.name).localeCompare(String(b.name)));
+
+  // dashboard tech select
+  technicianSelect.innerHTML = `<option value="">Seleccionar...</option>`;
+  list.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t.name;
+    opt.textContent = t.name;
+    technicianSelect.appendChild(opt);
+  });
+
+  // filtros
+  filterTechSelect.innerHTML = `<option value="">Todas</option>`;
+  comiTechSelect.innerHTML = `<option value="">Todas</option>`;
+  retTech.innerHTML = `<option value="">Todas</option>`;
+  userTechSelect.innerHTML = `<option value="">Seleccionar...</option>`;
+
+  list.forEach(t => {
+    [filterTechSelect, comiTechSelect, retTech].forEach(sel => {
+      const opt = document.createElement("option");
+      opt.value = t.name;
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+
+    const optU = document.createElement("option");
+    optU.value = t.name;
+    optU.textContent = t.name;
+    userTechSelect.appendChild(optU);
+  });
+
+  // si empleado, fija técnica
+  if (state.session && state.session.role === "employee") {
+    technicianSelect.value = state.session.technician || "";
+    technicianSelect.disabled = true;
+    technicianCustomInput.disabled = true;
+    filterTechSelect.value = state.session.technician || "";
+  }
+}
+
+function renderTechniciansTable() {
+  if (!techTableBody) return;
+  techTableBody.innerHTML = "";
+
+  const rows = state.technicians
+    .slice()
+    .sort((a,b) => String(a.name).localeCompare(String(b.name)));
+
+  rows.forEach(t => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="wrap">${escapeHtml(t.name || "")}</td>
+      <td>${Number(t.commission || 0).toFixed(1)}%</td>
+      <td>${t.active === false ? "No" : "Sí"}</td>
+      <td>
+        <button class="btn-table edit" data-id="${t.id}">Editar</button>
+        <button class="btn-table delete" data-id="${t.id}">X</button>
+      </td>
+    `;
+    techTableBody.appendChild(tr);
+  });
+}
+
+function resetTechForm() {
+  currentTechId = null;
+  techNameInput.value = "";
+  techPercentInput.value = "";
+}
+
+async function saveTech() {
+  if (!state.session || state.session.role !== "admin") return;
+
+  const name = (techNameInput.value || "").trim();
+  const commission = Number(techPercentInput.value || 0);
+
+  if (!name) return alert("Nombre requerido.");
+  if (commission < 0 || commission > 100) return alert("Comisión 0-100.");
+
+  try {
+    if (currentTechId) {
+      await techniciansRef().doc(currentTechId).set({ name, commission, active: true }, { merge: true });
+    } else {
+      const id = "t_" + Date.now();
+      await techniciansRef().doc(id).set({ name, commission, active: true });
+    }
+    resetTechForm();
+  } catch (e) {
+    console.error("save tech error", e);
+    alert("No se pudo guardar técnica.");
+  }
+}
+
+if (techTableBody) {
+  techTableBody.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    if (!state.session || state.session.role !== "admin") return;
+
+    const id = btn.getAttribute("data-id");
+    if (!id) return;
+
+    const t = state.technicians.find(x => x.id === id);
+    if (!t) return;
+
+    if (btn.classList.contains("edit")) {
+      currentTechId = id;
+      techNameInput.value = t.name || "";
+      techPercentInput.value = t.commission ?? "";
+      return;
+    }
+
+    if (btn.classList.contains("delete")) {
+      const ok = confirm(`¿Desactivar técnica "${t.name}"?`);
+      if (!ok) return;
+      try {
+        await techniciansRef().doc(id).set({ active: false }, { merge: true });
+      } catch (err) {
+        console.error(err);
+        alert("No se pudo desactivar.");
+      }
+    }
+  });
+}
+
+// ========================
+// USERS UI/CRUD
+// ========================
+function renderUsersTable() {
+  if (!usersTableBody) return;
+  usersTableBody.innerHTML = "";
+
+  const rows = state.users
+    .slice()
+    .sort((a,b) => String(a.name).localeCompare(String(b.name)));
+
+  rows.forEach(u => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="wrap">${escapeHtml(u.name || "")}</td>
+      <td>${escapeHtml(u.role || "employee")}</td>
+      <td class="wrap">${escapeHtml(u.technician || "")}</td>
+      <td>${u.active === false ? "No" : "Sí"}</td>
+      <td>
+        <button class="btn-table edit" data-id="${u.id}">Editar</button>
+        <button class="btn-table delete" data-id="${u.id}">${u.active === false ? "Activar" : "Desactivar"}</button>
+      </td>
+    `;
+    usersTableBody.appendChild(tr);
+  });
+
+  adminNote.textContent = "Tip: Admin inicial por defecto: Admin / 1234 (cámbialo creando otro admin y desactivando ese).";
+}
+
+async function createUser(role) {
+  if (!state.session || state.session.role !== "admin") return;
+
+  const name = (userNameInput.value || "").trim();
+  const pin = (userPinInput.value || "").trim();
+  const tech = (userTechSelect.value || "").trim();
+
+  if (!name) return alert("Nombre requerido.");
+  if (!pin || pin.length < 4) return alert("PIN mínimo 4 dígitos.");
+
+  if (role === "employee" && !tech) return alert("Selecciona técnica para empleado.");
+
+  try {
+    // si existe mismo nombre, alert
+    const exists = state.users.some(u => normalizeName(u.name) === normalizeName(name));
+    if (exists) return alert("Ya existe un usuario con ese nombre.");
+
+    await usersRef().add({
+      name,
+      pin,
+      role,
+      technician: role === "employee" ? tech : "",
+      active: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    userNameInput.value = "";
+    userPinInput.value = "";
+    userTechSelect.value = "";
+  } catch (e) {
+    console.error("create user error", e);
+    alert("No se pudo crear usuario.");
+  }
+}
+
+if (usersTableBody) {
+  usersTableBody.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    if (!state.session || state.session.role !== "admin") return;
+
+    const id = btn.getAttribute("data-id");
+    if (!id) return;
+
+    const u = state.users.find(x => x.id === id);
+    if (!u) return;
+
+    if (btn.classList.contains("edit")) {
+      currentUserId = id;
+      // carga al form para editar (nombre/pin/tech/role)
+      userNameInput.value = u.name || "";
+      userPinInput.value = u.pin || "";
+      userTechSelect.value = u.technician || "";
+      alert("Edita los campos y crea de nuevo con el mismo nombre NO; para edición real, dime y lo dejamos con botón 'Guardar cambios'.");
+      return;
+    }
+
+    if (btn.classList.contains("delete")) {
+      const nextActive = (u.active === false) ? true : false;
+      const ok = confirm(`${nextActive ? "¿Activar" : "¿Desactivar"} usuario "${u.name}"?`);
+      if (!ok) return;
+      try {
+        await usersRef().doc(id).set({ active: nextActive }, { merge: true });
+      } catch (err) {
+        console.error(err);
+        alert("No se pudo cambiar estado.");
+      }
+    }
+  });
+}
+
+// ========================
+// TICKETS LOGIC
+// ========================
 function nextTicketNumber() {
   if (!state.tickets.length) return 1;
   const max = state.tickets.reduce((m, t) => Math.max(m, Number(t.number || 0)), 0);
   return max + 1;
 }
-
 function renderTicketNumber() {
   ticketNumberInput.value = nextTicketNumber();
 }
 
+function recalcTotal() {
+  const qty = Number(quantityInput.value || 0);
+  const unit = Number(unitPriceInput.value || 0);
+  const tip = Number(tipAmountInput.value || 0);
+  const subtotal = qty * unit;
+  const total = subtotal + tip;
+  totalAmountInput.value = total.toFixed(2);
+}
+
+function resetFormForNewTicket() {
+  const today = new Date();
+  ticketDateInput.value = today.toISOString().slice(0, 10);
+  clientNameInput.value = "";
+  paymentMethodSelect.value = "";
+  serviceDescInput.value = "";
+  quantityInput.value = 1;
+  unitPriceInput.value = "";
+  tipAmountInput.value = "";
+  recalcTotal();
+  ticketNumberInput.value = nextTicketNumber();
+  formMessage.textContent = "";
+  currentEditingNumber = null;
+
+  // técnica según rol
+  if (state.session && state.session.role === "employee") {
+    technicianSelect.value = state.session.technician || "";
+    technicianCustomInput.value = "";
+  } else {
+    technicianSelect.value = "";
+    technicianCustomInput.value = "";
+  }
+}
+
+function getEffectiveTechnician() {
+  const isEmployee = state.session && state.session.role === "employee";
+  if (isEmployee) return state.session.technician || "";
+
+  const pre = technicianSelect.value;
+  const custom = technicianCustomInput.value.trim();
+  return custom || pre || "";
+}
+
+function collectTicketFromForm() {
+  const number = Number(ticketNumberInput.value || 0);
+  const date = ticketDateInput.value;
+  const clientName = clientNameInput.value.trim();
+  const technician = getEffectiveTechnician();
+  const paymentMethod = paymentMethodSelect.value;
+  const serviceDesc = serviceDescInput.value.trim();
+  const quantity = Number(quantityInput.value || 0);
+  const unitPrice = Number(unitPriceInput.value || 0);
+  const tipAmount = Number(tipAmountInput.value || 0);
+  const totalAmount = Number(totalAmountInput.value || 0);
+
+  if (!number || !date || !clientName || !technician || !paymentMethod || !serviceDesc || quantity <= 0 || unitPrice < 0) {
+    throw new Error("Faltan campos requeridos.");
+  }
+
+  return {
+    number,
+    date,
+    clientName,
+    technician,
+    paymentMethod,
+    serviceDesc,
+    quantity,
+    unitPrice,
+    tipAmount,
+    totalAmount,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+}
+
+function getVisibleTickets() {
+  if (!state.session) return [];
+  if (state.session.role === "admin") return state.tickets;
+  return state.tickets.filter(t => t.technician === state.session.technician);
+}
+
+async function saveTicket() {
+  if (!state.user) {
+    formMessage.textContent = "Conéctate con Google primero.";
+    return;
+  }
+  if (!state.session) {
+    formMessage.textContent = "Inicia sesión con tu Nombre + PIN.";
+    return;
+  }
+
+  try {
+    const ticket = collectTicketFromForm();
+    const docId = String(ticket.number);
+
+    await ticketsCollectionRef().doc(docId).set(ticket, { merge: true });
+
+    formMessage.textContent = currentEditingNumber
+      ? "Ticket actualizado."
+      : "Ticket guardado.";
+
+    currentEditingNumber = null;
+    resetFormForNewTicket();
+  } catch (err) {
+    console.error("save ticket error", err);
+    formMessage.textContent = err.message || "Error guardando ticket.";
+  }
+}
+
+// ========================
+// HISTORIAL / FILTROS
+// ========================
+function getFilteredTickets() {
+  const start = filterStartInput.value;
+  const end = filterEndInput.value;
+  const tech = filterTechSelect.value;
+
+  const base = getVisibleTickets();
+
+  return base.filter((t) => {
+    let ok = true;
+    if (start && t.date < start) ok = false;
+    if (end && t.date > end) ok = false;
+    if (tech && t.technician !== tech) ok = false;
+    return ok;
+  });
+}
+
 function renderTicketsTable(listOverride) {
-  const list = listOverride || state.tickets;
+  const list = listOverride || getFilteredTickets();
   ticketsTableBody.innerHTML = "";
+
   list
     .slice()
     .sort((a, b) => (a.number || 0) - (b.number || 0))
     .forEach((t) => {
       const tr = document.createElement("tr");
+      const tip = Number(t.tipAmount || 0);
       tr.innerHTML = `
         <td>${t.number || ""}</td>
         <td>${t.date || ""}</td>
-        <td>${t.clientName || ""}</td>
-        <td>${t.technician || ""}</td>
-        <td>${t.serviceDesc || ""}</td>
-        <td>${t.paymentMethod || ""}</td>
+        <td class="wrap">${escapeHtml(t.clientName || "")}</td>
+        <td class="wrap">${escapeHtml(t.technician || "")}</td>
+        <td class="wrap">${escapeHtml(t.serviceDesc || "")}</td>
+        <td>${escapeHtml(t.paymentMethod || "")}</td>
         <td>$${Number(t.totalAmount || 0).toFixed(2)}</td>
+        <td>$${tip.toFixed(2)}</td>
         <td>
           <button class="btn-table edit" data-action="edit" data-number="${t.number}">Editar</button>
           <button class="btn-table delete" data-action="delete" data-number="${t.number}">X</button>
@@ -250,11 +917,18 @@ function renderTicketsTable(listOverride) {
     });
 }
 
+// ========================
+// CAJA (ADMIN)
+// ========================
 function computeCajaTotals() {
+  if (!state.session || state.session.role !== "admin") return;
+
   const start = cajaStartInput.value;
   const end = cajaEndInput.value;
 
-  let efectivo = 0, ath = 0, tarjeta = 0;
+  let efectivo = 0;
+  let ath = 0;
+  let tarjeta = 0;
 
   state.tickets.forEach((t) => {
     if (!t.date) return;
@@ -275,450 +949,186 @@ function computeCajaTotals() {
   cajaTotalAllSpan.textContent = `$${all.toFixed(2)}`;
 }
 
-/* ========== COMISIONES (SIN PROPINA) ========== */
-function getFilteredTicketsForCommissions() {
-  const start = comiStartInput ? comiStartInput.value : "";
-  const end = comiEndInput ? comiEndInput.value : "";
-  const tech = comiTechSelect ? comiTechSelect.value : "";
-
-  return state.tickets.filter((t) => {
-    if (!t.date) return false;
-    if (start && t.date < start) return false;
-    if (end && t.date > end) return false;
-    if (tech && t.technician !== tech) return false;
-    return true;
-  });
+// ========================
+// COMISIONES (ADMIN) — ventas SIN propina
+// ========================
+function getFilteredTicketsForAdminRange(start, end, tech) {
+  let list = state.tickets.slice();
+  if (start) list = list.filter(t => t.date && t.date >= start);
+  if (end) list = list.filter(t => t.date && t.date <= end);
+  if (tech) list = list.filter(t => t.technician === tech);
+  return list;
 }
 
 function renderCommissionsSummary() {
+  if (!state.session || state.session.role !== "admin") return;
   if (!comiTableBody || !comiTotalSpan) return;
 
-  let list = getFilteredTicketsForCommissions();
-  const hasFilters =
-    (comiStartInput && comiStartInput.value) ||
-    (comiEndInput && comiEndInput.value) ||
-    (comiTechSelect && comiTechSelect.value);
+  const start = comiStartInput.value;
+  const end = comiEndInput.value;
+  const techFilter = comiTechSelect.value;
 
-  if (!list.length && !hasFilters && state.tickets.length) list = state.tickets.slice();
+  const list = getFilteredTicketsForAdminRange(start, end, techFilter);
 
   const byTech = {};
-  let grandCommission = 0;
+  let totalComi = 0;
 
-  list.forEach((t) => {
+  list.forEach(t => {
     const tech = t.technician || "Sin técnica";
-    const base = serviceSubtotal(t); // ✅ NO incluye tip
-    const rate = getCommissionRateForTech(tech);
-    const commission = (base * rate) / 100;
+    const total = Number(t.totalAmount || 0);
+    const tip = Number(t.tipAmount || 0);
+    const salesNoTip = Math.max(0, total - tip);
 
-    if (!byTech[tech]) byTech[tech] = { technician: tech, totalSales: 0, totalCommission: 0, rate };
-    byTech[tech].totalSales += base;
-    byTech[tech].totalCommission += commission;
-    grandCommission += commission;
+    const rate = getCommissionRateForTech(tech);
+    const comi = (salesNoTip * rate) / 100;
+
+    if (!byTech[tech]) byTech[tech] = { tech, rate, salesNoTip: 0, comi: 0 };
+    byTech[tech].salesNoTip += salesNoTip;
+    byTech[tech].comi += comi;
+    totalComi += comi;
   });
 
-  const rows = Object.values(byTech).sort((a, b) => a.technician.localeCompare(b.technician));
+  const rows = Object.values(byTech).sort((a,b) => a.tech.localeCompare(b.tech));
   comiTableBody.innerHTML = "";
-
-  rows.forEach((row) => {
+  rows.forEach(r => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${row.technician}</td>
-      <td>${row.rate.toFixed(1)}%</td>
-      <td>$${row.totalSales.toFixed(2)}</td>
-      <td>$${row.totalCommission.toFixed(2)}</td>
+      <td class="wrap">${escapeHtml(r.tech)}</td>
+      <td>${Number(r.rate).toFixed(1)}%</td>
+      <td>$${r.salesNoTip.toFixed(2)}</td>
+      <td>$${r.comi.toFixed(2)}</td>
     `;
     comiTableBody.appendChild(tr);
   });
 
-  comiTotalSpan.textContent = `$${grandCommission.toFixed(2)}`;
+  comiTotalSpan.textContent = `$${totalComi.toFixed(2)}`;
 }
 
-/* ========== PROPINA (TAB NUEVA) ========== */
-function getWeekKey(dateStr) {
+// ========================
+// PROPINAS (ADMIN)
+// ========================
+function weekKeyFromDate(dateStr) {
+  // ISO week simple (aprox): usamos lunes como inicio
   const d = new Date(dateStr + "T00:00:00");
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
-}
-
-function getFilteredTicketsForTips() {
-  const start = tipsStartInput ? tipsStartInput.value : "";
-  const end = tipsEndInput ? tipsEndInput.value : "";
-  const tech = tipsTechSelect ? tipsTechSelect.value : "";
-
-  return state.tickets.filter((t) => {
-    if (!t.date) return false;
-    if (start && t.date < start) return false;
-    if (end && t.date > end) return false;
-    if (tech && t.technician !== tech) return false;
-    return true;
-  });
+  const day = (d.getDay() + 6) % 7; // lunes=0
+  d.setDate(d.getDate() - day);
+  return d.toISOString().slice(0,10); // inicio semana
 }
 
 function renderTipsSummary() {
-  if (!tipsTableBody || !tipsTotalSpan) return;
+  if (!state.session || state.session.role !== "admin") return;
 
-  const group = (tipsGroupSelect && tipsGroupSelect.value) ? tipsGroupSelect.value : "tech";
-  const list = getFilteredTicketsForTips();
+  const start = tipStart.value;
+  const end = tipEnd.value;
+  const group = tipGroupBy.value;
+
+  const list = getFilteredTicketsForAdminRange(start, end, "");
 
   const map = new Map();
-  let totalTips = 0;
+  let sum = 0;
 
-  list.forEach((t) => {
+  list.forEach(t => {
     const tip = Number(t.tipAmount || 0);
     if (!tip) return;
 
-    let key = "Sin grupo";
+    let key = "—";
     if (group === "tech") key = t.technician || "Sin técnica";
-    else if (group === "day") key = t.date || "Sin fecha";
-    else if (group === "week") key = t.date ? getWeekKey(t.date) : "Sin semana";
+    if (group === "day") key = t.date || "Sin fecha";
+    if (group === "week") key = t.date ? weekKeyFromDate(t.date) : "Sin fecha";
 
     map.set(key, (map.get(key) || 0) + tip);
-    totalTips += tip;
+    sum += tip;
   });
 
-  const rows = Array.from(map.entries())
-    .map(([k, v]) => ({ key: k, total: v }))
-    .sort((a, b) => a.key.localeCompare(b.key));
-
   tipsTableBody.innerHTML = "";
-  rows.forEach((r) => {
+  Array.from(map.entries()).sort((a,b)=> String(a[0]).localeCompare(String(b[0]))).forEach(([k,v]) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${r.key}</td>
-      <td>$${r.total.toFixed(2)}</td>
-    `;
+    tr.innerHTML = `<td class="wrap">${escapeHtml(k)}</td><td>$${Number(v).toFixed(2)}</td>`;
     tipsTableBody.appendChild(tr);
   });
 
-  tipsTotalSpan.textContent = `$${totalTips.toFixed(2)}`;
+  tipsTotal.textContent = `$${sum.toFixed(2)}`;
 }
 
-/* ========== RETENCIONES 10% (TAB NUEVA) ==========
-   Retención = 10% de la comisión, Neto = Comisión - Retención */
-function getFilteredTicketsForReten() {
-  const start = retenStartInput ? retenStartInput.value : "";
-  const end = retenEndInput ? retenEndInput.value : "";
-  const tech = retenTechSelect ? retenTechSelect.value : "";
+// ========================
+// RETENCIONES (ADMIN) — 10% después de comisión, sin propina
+// ========================
+function renderRetentionsSummary() {
+  if (!state.session || state.session.role !== "admin") return;
 
-  return state.tickets.filter((t) => {
-    if (!t.date) return false;
-    if (start && t.date < start) return false;
-    if (end && t.date > end) return false;
-    if (tech && t.technician !== tech) return false;
-    return true;
-  });
-}
+  const start = retStart.value;
+  const end = retEnd.value;
+  const techFilter = retTech.value;
 
-function renderRetencionesSummary() {
-  if (!retenTableBody || !retenTotalSpan) return;
+  const list = getFilteredTicketsForAdminRange(start, end, techFilter);
 
-  const list = getFilteredTicketsForReten();
   const byTech = {};
-  let netGrand = 0;
+  let totalRet = 0;
 
-  list.forEach((t) => {
+  list.forEach(t => {
     const tech = t.technician || "Sin técnica";
-    const base = serviceSubtotal(t); // ✅ sin propina
+    const total = Number(t.totalAmount || 0);
+    const tip = Number(t.tipAmount || 0);
+    const salesNoTip = Math.max(0, total - tip);
+
     const rate = getCommissionRateForTech(tech);
-    const commission = (base * rate) / 100;
-    const reten = commission * 0.10;
-    const net = commission - reten;
+    const comi = (salesNoTip * rate) / 100;
+
+    const baseNeta = Math.max(0, salesNoTip - comi);
+    const ret = baseNeta * 0.10;
+    const netoPagar = Math.max(0, baseNeta - ret);
 
     if (!byTech[tech]) {
-      byTech[tech] = { technician: tech, base: 0, rate, commission: 0, reten: 0, net: 0 };
+      byTech[tech] = { tech, salesNoTip: 0, comi: 0, baseNeta: 0, ret: 0, netoPagar: 0 };
     }
-    byTech[tech].base += base;
-    byTech[tech].commission += commission;
-    byTech[tech].reten += reten;
-    byTech[tech].net += net;
-    netGrand += net;
+    byTech[tech].salesNoTip += salesNoTip;
+    byTech[tech].comi += comi;
+    byTech[tech].baseNeta += baseNeta;
+    byTech[tech].ret += ret;
+    byTech[tech].netoPagar += netoPagar;
+
+    totalRet += ret;
   });
 
-  const rows = Object.values(byTech).sort((a, b) => a.technician.localeCompare(b.technician));
-
-  retenTableBody.innerHTML = "";
-  rows.forEach((r) => {
+  retTableBody.innerHTML = "";
+  Object.values(byTech).sort((a,b)=>a.tech.localeCompare(b.tech)).forEach(r => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${r.technician}</td>
-      <td>$${r.base.toFixed(2)}</td>
-      <td>${(r.rate ?? getCommissionRateForTech(r.technician)).toFixed(1)}%</td>
-      <td>$${r.commission.toFixed(2)}</td>
-      <td>$${r.reten.toFixed(2)}</td>
-      <td>$${r.net.toFixed(2)}</td>
+      <td class="wrap">${escapeHtml(r.tech)}</td>
+      <td>$${r.salesNoTip.toFixed(2)}</td>
+      <td>$${r.comi.toFixed(2)}</td>
+      <td>$${r.baseNeta.toFixed(2)}</td>
+      <td>$${r.ret.toFixed(2)}</td>
+      <td>$${r.netoPagar.toFixed(2)}</td>
     `;
-    retenTableBody.appendChild(tr);
+    retTableBody.appendChild(tr);
   });
 
-  retenTotalSpan.textContent = `$${netGrand.toFixed(2)}`;
+  retTotal.textContent = `$${totalRet.toFixed(2)}`;
 }
 
-/* ========== VISTAS / PÁGINAS ========== */
-function showPinScreen() {
-  pinScreen.classList.remove("hidden");
-  authScreen.classList.add("hidden");
-  appShell.classList.add("hidden");
-  pinInput.value = "";
-  pinError.textContent = "";
-}
-function showAuthScreen() {
-  pinScreen.classList.add("hidden");
-  authScreen.classList.remove("hidden");
-  appShell.classList.add("hidden");
-}
-function showAppShell() {
-  pinScreen.classList.add("hidden");
-  authScreen.classList.add("hidden");
-  appShell.classList.remove("hidden");
-}
-
-function setActivePage(pageName) {
-  Object.keys(pages).forEach((name) => {
-    pages[name].classList.toggle("active-page", name === pageName);
-  });
-  navButtons.forEach((btn) => {
-    const target = btn.getAttribute("data-page");
-    btn.classList.toggle("nav-btn-active", target === pageName);
-  });
-
-  if (pageName === "comisiones") renderCommissionsSummary();
-  if (pageName === "propinas") renderTipsSummary();
-  if (pageName === "retenciones") renderRetencionesSummary();
-}
-
-/* ========== PIN ========== */
-function handlePinEnter() {
-  const v = (pinInput.value || "").trim();
-  if (!v) return (pinError.textContent = "Ingrese el PIN.");
-  if (v === state.pin) {
-    pinError.textContent = "";
-    if (state.user) showAppShell();
-    else showAuthScreen();
-  } else {
-    pinError.textContent = "PIN incorrecto.";
-  }
-}
-
-/* ========== AUTH + LISTENER ========== */
-function startTicketsListener() {
-  if (state.unsubscribeTickets) {
-    state.unsubscribeTickets();
-    state.unsubscribeTickets = null;
-  }
-  state.unsubscribeTickets = ticketsCollectionRef()
-    .orderBy("number", "asc")
-    .onSnapshot(
-      (snap) => {
-        const arr = [];
-        snap.forEach((doc) => arr.push(doc.data()));
-        state.tickets = arr;
-        saveState();
-
-        renderTicketNumber();
-        renderTicketsTable();
-        computeCajaTotals();
-        renderCommissionsSummary();
-        renderTipsSummary();
-        renderRetencionesSummary();
-      },
-      (err) => console.error("onSnapshot error", err)
-    );
-}
-
-async function signInWithGoogle() {
-  try {
-    const result = await auth.signInWithPopup(googleProvider);
-    state.user = result.user;
-    userEmailSpan.textContent = state.user.email || "";
-    saveState();
-    await loadBrandingFromCloud();
-    startTicketsListener();
-    showAppShell();
-  } catch (err) {
-    console.error("Error Google SignIn", err);
-    alert("No se pudo iniciar sesión con Google.");
-  }
-}
-
-async function signOutAndReset() {
-  try { await auth.signOut(); } catch (e) { console.error("Error signOut", e); }
-  if (state.unsubscribeTickets) { state.unsubscribeTickets(); state.unsubscribeTickets = null; }
-  state.user = null;
-  userEmailSpan.textContent = "Sin conexión a Google";
-  saveState();
-  showPinScreen();
-}
-
-auth.onAuthStateChanged((user) => {
-  state.user = user || null;
-  if (user) {
-    userEmailSpan.textContent = user.email || "";
-    startTicketsListener();
-  } else {
-    userEmailSpan.textContent = "Sin conexión a Google";
-    if (state.unsubscribeTickets) {
-      state.unsubscribeTickets();
-      state.unsubscribeTickets = null;
-    }
-  }
-});
-
-/* ========== DASHBOARD: TICKETS ========== */
-function recalcTotal() {
-  const qty = Number(quantityInput.value || 0);
-  const unit = Number(unitPriceInput.value || 0);
-  const tip = Number(tipAmountInput.value || 0);
-  const subtotal = qty * unit;
-  const total = subtotal + tip;
-  totalAmountInput.value = total.toFixed(2);
-}
-
-function resetFormForNewTicket() {
-  const today = new Date();
-  ticketDateInput.value = today.toISOString().slice(0, 10);
-  clientNameInput.value = "";
-  technicianSelect.value = "";
-  technicianCustomInput.value = "";
-  paymentMethodSelect.value = "";
-  serviceDescInput.value = "";
-  quantityInput.value = 1;
-  unitPriceInput.value = "";
-  tipAmountInput.value = "";
-  recalcTotal();
-  ticketNumberInput.value = nextTicketNumber();
-  formMessage.textContent = "";
-  currentEditingNumber = null;
-}
-
-function collectTicketFromForm() {
-  const number = Number(ticketNumberInput.value || 0);
-  const date = ticketDateInput.value;
-  const clientName = clientNameInput.value.trim();
-  const techPre = technicianSelect.value;
-  const techCustom = technicianCustomInput.value.trim();
-  const technician = techCustom || techPre || "";
-  const paymentMethod = paymentMethodSelect.value;
-  const serviceDesc = serviceDescInput.value.trim();
-  const quantity = Number(quantityInput.value || 0);
-  const unitPrice = Number(unitPriceInput.value || 0);
-  const tipAmount = Number(tipAmountInput.value || 0);
-  const totalAmount = Number(totalAmountInput.value || 0);
-
-  if (!number || !date || !clientName || !technician || !paymentMethod || !serviceDesc || quantity <= 0 || unitPrice < 0) {
-    throw new Error("Faltan campos requeridos.");
-  }
-
-  return {
-    number, date, clientName, technician, paymentMethod, serviceDesc,
-    quantity, unitPrice, tipAmount, totalAmount,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  };
-}
-
-async function saveTicket() {
-  if (!state.user) {
-    formMessage.textContent = "Conéctate con Google antes de guardar tickets.";
-    return;
-  }
-  try {
-    const ticket = collectTicketFromForm();
-    const docId = String(ticket.number);
-
-    await ticketsCollectionRef().doc(docId).set(ticket, { merge: true });
-
-    formMessage.textContent = currentEditingNumber
-      ? "Ticket actualizado correctamente."
-      : "Ticket guardado y sincronizado con Firebase.";
-
-    currentEditingNumber = null;
-    resetFormForNewTicket();
-  } catch (err) {
-    console.error("Error guardando ticket", err);
-    formMessage.textContent = err.message || "Error al guardar el ticket.";
-  }
-}
-
-/* ========== BRANDING EN FIRESTORE (COMPARTIDO) ========== */
-async function loadBrandingFromCloud() {
-  if (!state.user) return;
-  try {
-    const snap = await brandingDocRef().get();
-    if (snap.exists) {
-      const data = snap.data();
-      if (data.appName) state.appName = data.appName;
-      if (data.logoUrl !== undefined) state.logoUrl = data.logoUrl;
-      if (data.pdfHeaderText !== undefined) state.pdfHeaderText = data.pdfHeaderText;
-      if (data.pdfFooterText !== undefined) state.pdfFooterText = data.pdfFooterText;
-      if (data.footerText !== undefined) state.footerText = data.footerText;
-      if (data.commissionRates !== undefined) {
-        state.commissionRates = {
-          Cynthia: data.commissionRates.Cynthia ?? 40,
-          Carmen: data.commissionRates.Carmen ?? 35,
-          Yerika: data.commissionRates.Yerika ?? 35,
-          default: data.commissionRates.default ?? 30
-        };
-      }
-      saveState();
-      renderBranding();
-    }
-  } catch (e) {
-    console.error("Error cargando branding", e);
-  }
-}
-
-async function saveBrandingToCloud() {
-  if (!state.user) {
-    brandingStatus.textContent = "Conéctate con Google para guardar branding.";
-    return;
-  }
-  try {
-    const payload = {
-      appName: state.appName,
-      logoUrl: state.logoUrl || "",
-      pdfHeaderText: state.pdfHeaderText || "",
-      pdfFooterText: state.pdfFooterText || "",
-      footerText: state.footerText || "",
-      commissionRates: state.commissionRates || { Cynthia: 40, Carmen: 35, Yerika: 35, default: 30 }
-    };
-    await brandingDocRef().set(payload, { merge: true });
-    brandingStatus.textContent = "Branding guardado en Firebase.";
-  } catch (e) {
-    console.error("Error guardando branding", e);
-    brandingStatus.textContent = "Error al guardar branding.";
-  }
-}
-
-/* ========== FILTROS / LISTA ========== */
-function getFilteredTickets() {
-  const start = filterStartInput.value;
-  const end = filterEndInput.value;
-  const tech = filterTechSelect.value;
-
-  return state.tickets.filter((t) => {
-    if (!t.date) return false;
-    if (start && t.date < start) return false;
-    if (end && t.date > end) return false;
-    if (tech && t.technician !== tech) return false;
-    return true;
-  });
-}
-
-/* ========== PDF + BACKUP JSON (igual que el tuyo) ========== */
+// ========================
+// PDF + BACKUP (USA VISIBLE TICKETS)
+// ========================
 function exportTicketsToPDF() {
   const jsPDFLib = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPDFLib) return alert("La librería jsPDF no se cargó.");
+  if (!jsPDFLib) return alert("jsPDF no cargó.");
 
   const list = getFilteredTickets();
-  if (!list.length) return alert("No hay tickets para exportar con el filtro actual.");
+  if (!list.length) return alert("No hay tickets con el filtro actual.");
 
   const doc = new jsPDFLib({ orientation: "p", unit: "mm", format: "a4" });
   const marginLeft = 12;
 
-  const col = { num: marginLeft, date: marginLeft + 12, client: marginLeft + 38, tech: marginLeft + 80, service: marginLeft + 112, method: marginLeft + 150, total: 200 };
+  const col = {
+    num: marginLeft,
+    date: marginLeft + 12,
+    client: marginLeft + 38,
+    tech: marginLeft + 80,
+    service: marginLeft + 112,
+    total: 200
+  };
+
   let y = 14;
 
   doc.setFont("helvetica", "bold");
@@ -732,10 +1142,11 @@ function exportTicketsToPDF() {
     const lines = doc.splitTextToSize(state.pdfHeaderText, 180);
     doc.text(lines, marginLeft, y);
     y += lines.length * 4 + 2;
-  } else y += 2;
+  } else {
+    y += 2;
+  }
 
-  const now = new Date();
-  doc.text(`Generado: ${now.toLocaleString()}`, marginLeft, y);
+  doc.text(`Generado: ${new Date().toLocaleString()}`, marginLeft, y);
   y += 6;
 
   doc.setFont("helvetica", "bold");
@@ -744,14 +1155,12 @@ function exportTicketsToPDF() {
   doc.text("Cliente", col.client, y);
   doc.text("Técnica", col.tech, y);
   doc.text("Servicio", col.service, y);
-  doc.text("Método", col.method, y);
   doc.text("Total", col.total, y, { align: "right" });
   y += 4;
 
   doc.setFont("helvetica", "normal");
 
   let grandTotal = 0;
-
   list.forEach((t) => {
     if (y > 270) { doc.addPage(); y = 14; }
 
@@ -763,8 +1172,8 @@ function exportTicketsToPDF() {
     doc.text(String(t.clientName || "").substring(0, 18), col.client, y);
     doc.text(String(t.technician || "").substring(0, 14), col.tech, y);
     doc.text(String(t.serviceDesc || "").substring(0, 20), col.service, y);
-    doc.text(String(t.paymentMethod || ""), col.method, y);
     doc.text(`$${total.toFixed(2)}`, col.total, y, { align: "right" });
+
     y += 4;
   });
 
@@ -786,7 +1195,7 @@ function exportTicketsToPDF() {
 
 function downloadBackupJson() {
   const list = getFilteredTickets();
-  if (!list.length) return alert("No hay tickets para exportar con el filtro actual.");
+  if (!list.length) return alert("No hay tickets con el filtro actual.");
 
   const blob = new Blob([JSON.stringify(list, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -799,119 +1208,9 @@ function downloadBackupJson() {
   URL.revokeObjectURL(url);
 }
 
-/* ========== CAMBIAR PIN ========== */
-function changePin() {
-  const newPin = (newPinInput.value || "").trim();
-  if (!newPin || newPin.length < 4) {
-    pinChangeMessage.textContent = "El PIN debe tener al menos 4 dígitos.";
-    return;
-  }
-  state.pin = newPin;
-  saveState();
-  pinChangeMessage.textContent = "PIN actualizado correctamente.";
-  newPinInput.value = "";
-}
-
-/* ========== EVENTOS ========== */
-pinEnterBtn.addEventListener("click", handlePinEnter);
-pinInput.addEventListener("keyup", (e) => { if (e.key === "Enter") handlePinEnter(); });
-
-googleSignInBtn.addEventListener("click", signInWithGoogle);
-authBackToPinBtn.addEventListener("click", showPinScreen);
-logoutBtn.addEventListener("click", signOutAndReset);
-
-navButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const page = btn.getAttribute("data-page");
-    setActivePage(page);
-  });
-});
-
-appNameEditable.addEventListener("input", () => {
-  state.appName = appNameEditable.textContent.trim() || "Nexus Salon";
-  saveState();
-  renderBranding();
-});
-
-logoUrlInput.addEventListener("input", () => {
-  state.logoUrl = logoUrlInput.value.trim();
-  saveState();
-  renderBranding();
-});
-
-pdfHeaderTextArea.addEventListener("input", () => { state.pdfHeaderText = pdfHeaderTextArea.value; saveState(); });
-pdfFooterTextArea.addEventListener("input", () => { state.pdfFooterText = pdfFooterTextArea.value; saveState(); });
-
-footerTextInput.addEventListener("input", () => {
-  state.footerText = footerTextInput.value;
-  saveState();
-  footerTextSpan.textContent = state.footerText;
-});
-
-saveBrandingBtn.addEventListener("click", (e) => { e.preventDefault(); saveBrandingToCloud(); });
-
-if (commissionCynthiaInput) commissionCynthiaInput.addEventListener("input", () => { state.commissionRates.Cynthia = Number(commissionCynthiaInput.value || 0); saveState(); });
-if (commissionCarmenInput) commissionCarmenInput.addEventListener("input", () => { state.commissionRates.Carmen = Number(commissionCarmenInput.value || 0); saveState(); });
-if (commissionYerikaInput) commissionYerikaInput.addEventListener("input", () => { state.commissionRates.Yerika = Number(commissionYerikaInput.value || 0); saveState(); });
-if (commissionDefaultInput) commissionDefaultInput.addEventListener("input", () => { state.commissionRates.default = Number(commissionDefaultInput.value || 0); saveState(); });
-
-changePinBtn.addEventListener("click", (e) => { e.preventDefault(); changePin(); });
-
-newTicketBtn.addEventListener("click", (e) => { e.preventDefault(); resetFormForNewTicket(); });
-
-quantityInput.addEventListener("input", recalcTotal);
-unitPriceInput.addEventListener("input", recalcTotal);
-tipAmountInput.addEventListener("input", recalcTotal);
-
-saveTicketBtn.addEventListener("click", (e) => { e.preventDefault(); saveTicket(); });
-
-applyFilterBtn.addEventListener("click", () => { renderTicketsTable(getFilteredTickets()); });
-clearFilterBtn.addEventListener("click", () => {
-  filterStartInput.value = "";
-  filterEndInput.value = "";
-  filterTechSelect.value = "";
-  renderTicketsTable();
-});
-
-cajaApplyBtn.addEventListener("click", () => computeCajaTotals());
-cajaClearBtn.addEventListener("click", () => {
-  const today = new Date().toISOString().slice(0, 10);
-  cajaStartInput.value = today;
-  cajaEndInput.value = today;
-  computeCajaTotals();
-});
-
-exportPdfBtn.addEventListener("click", exportTicketsToPDF);
-backupJsonBtn.addEventListener("click", downloadBackupJson);
-
-if (comiApplyBtn) comiApplyBtn.addEventListener("click", () => renderCommissionsSummary());
-if (comiClearBtn) comiClearBtn.addEventListener("click", () => {
-  comiStartInput.value = "";
-  comiEndInput.value = "";
-  comiTechSelect.value = "";
-  renderCommissionsSummary();
-});
-
-// Propinas
-if (tipsApplyBtn) tipsApplyBtn.addEventListener("click", () => renderTipsSummary());
-if (tipsClearBtn) tipsClearBtn.addEventListener("click", () => {
-  tipsStartInput.value = "";
-  tipsEndInput.value = "";
-  tipsTechSelect.value = "";
-  tipsGroupSelect.value = "tech";
-  renderTipsSummary();
-});
-
-// Retenciones
-if (retenApplyBtn) retenApplyBtn.addEventListener("click", () => renderRetencionesSummary());
-if (retenClearBtn) retenClearBtn.addEventListener("click", () => {
-  retenStartInput.value = "";
-  retenEndInput.value = "";
-  retenTechSelect.value = "";
-  renderRetencionesSummary();
-});
-
-/* Editar / eliminar desde la tabla */
+// ========================
+// DELETE/EDIT tickets
+// ========================
 ticketsTableBody.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
@@ -920,7 +1219,9 @@ ticketsTableBody.addEventListener("click", async (e) => {
   const number = Number(btn.dataset.number);
   if (!number) return;
 
-  const ticket = state.tickets.find((t) => Number(t.number) === number);
+  // solo tickets visibles
+  const visible = getVisibleTickets();
+  const ticket = visible.find(t => Number(t.number) === number);
   if (!ticket) return;
 
   if (action === "edit") {
@@ -933,16 +1234,22 @@ ticketsTableBody.addEventListener("click", async (e) => {
     quantityInput.value = ticket.quantity;
     unitPriceInput.value = ticket.unitPrice;
     tipAmountInput.value = ticket.tipAmount || 0;
+    paymentMethodSelect.value = ticket.paymentMethod;
 
-    if (["Cynthia", "Carmen", "Yerika"].includes(ticket.technician)) {
-      technicianSelect.value = ticket.technician;
+    // técnica
+    const isEmployee = state.session && state.session.role === "employee";
+    if (isEmployee) {
+      technicianSelect.value = state.session.technician || "";
       technicianCustomInput.value = "";
     } else {
-      technicianSelect.value = "";
-      technicianCustomInput.value = ticket.technician || "";
+      if (state.technicians.some(x => x.name === ticket.technician)) {
+        technicianSelect.value = ticket.technician;
+        technicianCustomInput.value = "";
+      } else {
+        technicianSelect.value = "";
+        technicianCustomInput.value = ticket.technician || "";
+      }
     }
-
-    paymentMethodSelect.value = ticket.paymentMethod;
 
     recalcTotal();
     formMessage.textContent = `Editando ticket #${ticket.number}`;
@@ -950,39 +1257,185 @@ ticketsTableBody.addEventListener("click", async (e) => {
   }
 
   if (action === "delete") {
-    if (!state.user) return alert("Conéctate con Google para eliminar tickets.");
-
-    const ok = confirm(`¿Eliminar el ticket #${number}? Esta acción no se puede deshacer.`);
+    if (!state.session) return alert("Inicia sesión.");
+    const isEmployee = state.session.role === "employee";
+    // empleado puede borrar SOLO sus tickets (ya filtrado)
+    const ok = confirm(`¿Eliminar el ticket #${number}?`);
     if (!ok) return;
 
     try {
       await ticketsCollectionRef().doc(String(number)).delete();
     } catch (err) {
-      console.error("Error eliminando ticket", err);
-      alert("No se pudo eliminar el ticket.");
+      console.error(err);
+      alert("No se pudo eliminar.");
     }
   }
 });
 
-/* ========== INIT + PWA ========== */
-function init() {
-  loadState();
-  renderBranding();
-  renderTicketNumber();
-  renderTicketsTable(state.tickets);
+// ========================
+// UTILS
+// ========================
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
 
-  const today = new Date().toISOString().slice(0, 10);
+// ========================
+// EVENTS
+// ========================
+googleSignInBtn.addEventListener("click", signInWithGoogle);
+logoutBtnLogin.addEventListener("click", signOutGoogle);
+
+pinEnterBtn.addEventListener("click", loginWithPin);
+loginPin.addEventListener("keyup", (e) => { if (e.key === "Enter") loginWithPin(); });
+loginName.addEventListener("keyup", (e) => { if (e.key === "Enter") loginWithPin(); });
+
+logoutBtn.addEventListener("click", () => {
+  // salir del rol (mantiene google)
+  state.session = null;
+  saveState();
+  showPinLogin();
+});
+
+navButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const page = btn.getAttribute("data-page");
+    // bloqueo admin pages si empleado
+    if (btn.classList.contains("nav-admin") && (!state.session || state.session.role !== "admin")) return;
+    setActivePage(page);
+  });
+});
+
+appNameEditable.addEventListener("input", () => {
+  if (!state.session || state.session.role !== "admin") return; // solo admin cambia branding
+  state.appName = appNameEditable.textContent.trim() || "Nexus Salon";
+  saveState();
+  renderBranding();
+});
+
+logoUrlInput.addEventListener("input", () => {
+  if (!state.session || state.session.role !== "admin") return;
+  state.logoUrl = logoUrlInput.value.trim();
+  saveState();
+  renderBranding();
+});
+
+pdfHeaderTextArea.addEventListener("input", () => {
+  if (!state.session || state.session.role !== "admin") return;
+  state.pdfHeaderText = pdfHeaderTextArea.value;
+  saveState();
+});
+pdfFooterTextArea.addEventListener("input", () => {
+  if (!state.session || state.session.role !== "admin") return;
+  state.pdfFooterText = pdfFooterTextArea.value;
+  saveState();
+});
+footerTextInput.addEventListener("input", () => {
+  if (!state.session || state.session.role !== "admin") return;
+  state.footerText = footerTextInput.value;
+  saveState();
+  footerTextSpan.textContent = state.footerText;
+});
+
+saveBrandingBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  saveBrandingToCloud();
+});
+
+// tech CRUD buttons
+techSaveBtn.addEventListener("click", (e) => { e.preventDefault(); saveTech(); });
+techCancelBtn.addEventListener("click", (e) => { e.preventDefault(); resetTechForm(); });
+
+// user CRUD buttons
+userCreateBtn.addEventListener("click", (e) => { e.preventDefault(); createUser("employee"); });
+userCreateAdminBtn.addEventListener("click", (e) => { e.preventDefault(); createUser("admin"); });
+
+// ticket buttons
+newTicketBtn.addEventListener("click", (e) => { e.preventDefault(); resetFormForNewTicket(); });
+quantityInput.addEventListener("input", recalcTotal);
+unitPriceInput.addEventListener("input", recalcTotal);
+tipAmountInput.addEventListener("input", recalcTotal);
+saveTicketBtn.addEventListener("click", (e) => { e.preventDefault(); saveTicket(); });
+
+// historial filters
+applyFilterBtn.addEventListener("click", () => renderTicketsTable(getFilteredTickets()));
+clearFilterBtn.addEventListener("click", () => {
+  filterStartInput.value = "";
+  filterEndInput.value = "";
+  filterTechSelect.value = "";
+  renderTicketsTable();
+});
+
+// caja
+cajaApplyBtn.addEventListener("click", computeCajaTotals);
+cajaClearBtn.addEventListener("click", () => {
+  const today = new Date().toISOString().slice(0,10);
   cajaStartInput.value = today;
   cajaEndInput.value = today;
   computeCajaTotals();
+});
 
-  resetFormForNewTicket();
-  setActivePage("dashboard");
-  showPinScreen();
+// comisiones
+comiApplyBtn.addEventListener("click", renderCommissionsSummary);
+comiClearBtn.addEventListener("click", () => {
+  comiStartInput.value = "";
+  comiEndInput.value = "";
+  comiTechSelect.value = "";
+  renderCommissionsSummary();
+});
 
+// propinas
+tipApplyBtn.addEventListener("click", renderTipsSummary);
+tipClearBtn.addEventListener("click", () => {
+  tipStart.value = "";
+  tipEnd.value = "";
+  tipGroupBy.value = "tech";
+  renderTipsSummary();
+});
+
+// retenciones
+retApplyBtn.addEventListener("click", renderRetentionsSummary);
+retClearBtn.addEventListener("click", () => {
+  retStart.value = "";
+  retEnd.value = "";
+  retTech.value = "";
+  renderRetentionsSummary();
+});
+
+// export
+exportPdfBtn.addEventListener("click", exportTicketsToPDF);
+backupJsonBtn.addEventListener("click", downloadBackupJson);
+
+// ========================
+// INIT
+// ========================
+function init() {
+  loadState();
+  renderBranding();
+
+  // default fechas
+  const today = new Date().toISOString().slice(0,10);
+  ticketDateInput.value = today;
+  cajaStartInput.value = today;
+  cajaEndInput.value = today;
+
+  // PWA SW
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js").catch((err) => console.error("SW error", err));
+    navigator.serviceWorker.register("service-worker.js").catch(err => console.error("SW error", err));
   }
+
+  // si no hay google => auth
+  if (!auth.currentUser) {
+    showAuth();
+    return;
+  }
+
+  showPinLogin();
 }
 
 init();
+
