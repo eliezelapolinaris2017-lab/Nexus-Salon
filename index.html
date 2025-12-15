@@ -15,12 +15,33 @@
   <link rel="apple-touch-icon" href="assets/logo.png" />
 
   <link rel="icon" type="image/png" href="assets/logo.png" />
-  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
 
-  <!-- ============== PANTALLA PIN (SEGURIDAD LOCAL) ============== -->
-  <div id="pinScreen" class="view view-centered">
+  <!-- ============== PANTALLA AUTH (GOOGLE) ============== -->
+  <div id="authScreen" class="view view-centered">
+    <div class="card card-auth">
+      <div class="brand-header">
+        <div class="brand-logo-wrap">
+          <img src="assets/logo.png" alt="Logo" class="brand-logo" />
+        </div>
+        <div class="brand-text-wrap">
+          <h1>Nexus Salon</h1>
+          <p>Conecta con Google para sincronizar en Firebase</p>
+        </div>
+      </div>
+
+      <button id="googleSignInBtn" class="btn btn-google">Conectar con Google</button>
+
+      <p class="msg-info small mt-4">
+        *Esta conexión es para acceder a la base de datos (Firestore). Luego entrarás con tu <strong>Nombre + PIN</strong>.
+      </p>
+    </div>
+  </div>
+
+  <!-- ============== LOGIN INTERNO (ADMIN/EMPLEADO) ============== -->
+  <div id="pinScreen" class="view view-centered hidden">
     <div class="card card-pin">
       <div class="brand-header">
         <div class="brand-logo-wrap">
@@ -28,39 +49,38 @@
         </div>
         <div class="brand-text-wrap">
           <h1 id="pinAppName">Nexus Salon</h1>
-          <p>Acceso protegido por PIN</p>
+          <p>Acceso por usuario (Nombre + PIN)</p>
         </div>
       </div>
 
-      <label class="field-label" for="pinInput">Ingrese PIN de seguridad</label>
-      <input id="pinInput" type="password" maxlength="6" class="field-input" autocomplete="off" />
+      <div class="grid-2">
+        <div class="field-group">
+          <label class="field-label" for="loginName">Nombre</label>
+          <input id="loginName" type="text" class="field-input" placeholder="Ej. Cynthia" autocomplete="off" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="loginPin">PIN</label>
+          <input id="loginPin" type="password" maxlength="6" class="field-input" placeholder="****" autocomplete="off" />
+        </div>
+      </div>
 
       <p id="pinError" class="msg-error"></p>
 
-      <button id="pinEnterBtn" class="btn btn-primary">Entrar</button>
+      <div class="form-actions">
+        <button id="pinEnterBtn" class="btn btn-primary">Entrar</button>
+        <button id="logoutBtnLogin" class="btn btn-secondary">Desconectar Google</button>
+      </div>
 
-      <p class="pin-hint"></p>
+      <p class="msg-info small mt-4">
+        Admin ve todo. Empleados solo ven sus tickets.
+      </p>
     </div>
   </div>
 
-  <!-- ============== PANTALLA AUTH (GOOGLE) ============== -->
-  <div id="authScreen" class="view view-centered hidden">
-    <div class="card card-auth">
-      <h2>Conectar con Google</h2>
-      <p>Inicia sesión con tu cuenta de Google para sincronizar tickets en todos los dispositivos.</p>
-      <button id="googleSignInBtn" class="btn btn-google">
-        Conectar con Google
-      </button>
-      <button id="authBackToPinBtn" class="btn btn-text">
-        Volver al PIN
-      </button>
-    </div>
-  </div>
-
-  <!-- ============== APP PRINCIPAL (CON PESTAÑAS) ============== -->
+  <!-- ============== APP PRINCIPAL (MÓVIL 100%) ============== -->
   <div id="appShell" class="view hidden">
 
-    <!-- Topbar -->
+    <!-- Topbar (móvil) -->
     <header class="topbar">
       <div class="topbar-left">
         <div class="brand-inline">
@@ -71,26 +91,14 @@
             <div class="app-name-row">
               <span id="appNameEditable" contenteditable="true" class="app-name">Nexus Salon</span>
             </div>
-            <small class="app-subtitle">Control de tickets para salón de belleza</small>
+            <small id="roleBadge" class="app-subtitle">—</small>
           </div>
         </div>
       </div>
 
-      <div class="topbar-center">
-        <button data-page="dashboard" class="nav-btn nav-btn-active">Dashboard</button>
-        <button data-page="historial" class="nav-btn">Historial</button>
-        <button data-page="caja" class="nav-btn">Caja</button>
-        <button data-page="config" class="nav-btn">Configuración</button>
-        <button data-page="comisiones" class="nav-btn">Comisiones</button>
-
-        <!-- ✅ NUEVO -->
-        <button data-page="propinas" class="nav-btn">Propinas</button>
-        <button data-page="retenciones" class="nav-btn">Retenciones 10%</button>
-      </div>
-
       <div class="topbar-right">
         <div class="user-info">
-          <span id="userEmail" class="user-email">Sin conexión a Google</span>
+          <span id="userEmail" class="user-email">Sin conexión</span>
         </div>
         <div class="topbar-actions">
           <button id="logoutBtn" class="btn btn-danger">Salir</button>
@@ -98,12 +106,22 @@
       </div>
     </header>
 
-    <!-- ========== PÁGINAS ========== -->
+    <!-- Bottom Nav (móvil) -->
+    <nav class="bottom-nav" id="bottomNav">
+      <button data-page="dashboard" class="nav-btn nav-btn-active">Ticket</button>
+      <button data-page="historial" class="nav-btn">Historial</button>
+      <button data-page="caja" class="nav-btn nav-admin">Caja</button>
+      <button data-page="comisiones" class="nav-btn nav-admin">Comisiones</button>
+      <button data-page="propinas" class="nav-btn nav-admin">Propinas</button>
+      <button data-page="retenciones" class="nav-btn nav-admin">Retenciones</button>
+      <button data-page="config" class="nav-btn nav-admin">Config</button>
+    </nav>
+
     <main class="layout-main">
 
       <!-- ====== PAGE: DASHBOARD ====== -->
       <section id="page-dashboard" class="page active-page">
-        <div class="panel panel-form wide">
+        <div class="panel wide">
           <h2>Nuevo ticket</h2>
 
           <div class="grid-2">
@@ -127,12 +145,11 @@
               <label class="field-label">Técnica</label>
               <select id="technician" class="field-input">
                 <option value="">Seleccionar...</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
               </select>
-              <input id="technicianCustom" type="text" class="field-input mt-4" placeholder="Otra técnica (opcional)" />
+              <input id="technicianCustom" type="text" class="field-input mt-4" placeholder="Otra técnica (admin opcional)" />
+              <p class="msg-info small">*Empleados no pueden cambiar de técnica.</p>
             </div>
+
             <div class="field-group">
               <label class="field-label">Método de pago</label>
               <select id="paymentMethod" class="field-input">
@@ -165,14 +182,15 @@
               <input id="tipAmount" type="number" min="0" step="0.01" class="field-input" placeholder="0.00" />
             </div>
             <div class="field-group">
-              <label class="field-label">Total (no IVU)</label>
+              <label class="field-label">Total (incluye propina)</label>
               <input id="totalAmount" type="number" class="field-input" readonly />
+              <p class="msg-info small">Comisión se calcula SIN propina.</p>
             </div>
           </div>
 
           <div class="form-actions">
-            <button id="newTicketBtn" class="btn btn-secondary">Nuevo ticket</button>
-            <button id="saveTicketBtn" class="btn btn-primary">Guardar ticket</button>
+            <button id="newTicketBtn" class="btn btn-secondary">Nuevo</button>
+            <button id="saveTicketBtn" class="btn btn-primary">Guardar</button>
           </div>
 
           <p id="formMessage" class="msg-info"></p>
@@ -181,12 +199,12 @@
 
       <!-- ====== PAGE: HISTORIAL ====== -->
       <section id="page-historial" class="page">
-        <div class="panel panel-history wide">
+        <div class="panel wide">
           <div class="panel-header">
-            <h2>Historial de tickets</h2>
+            <h2>Historial</h2>
             <div class="panel-header-actions">
-              <button id="exportPdfBtn" class="btn btn-outline">Exportar PDF</button>
-              <button id="backupJsonBtn" class="btn btn-outline">Backup JSON</button>
+              <button id="exportPdfBtn" class="btn btn-outline">PDF</button>
+              <button id="backupJsonBtn" class="btn btn-outline">JSON</button>
             </div>
           </div>
 
@@ -203,9 +221,6 @@
               <label>Técnica</label>
               <select id="filterTech" class="field-input small">
                 <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
               </select>
             </div>
             <div class="filter-group filter-actions">
@@ -225,19 +240,22 @@
                   <th>Servicio</th>
                   <th>Método</th>
                   <th>Total</th>
+                  <th>Propina</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
               <tbody id="ticketsTableBody"></tbody>
             </table>
           </div>
+
+          <p class="msg-info small">*Empleados solo ven sus tickets.</p>
         </div>
       </section>
 
-      <!-- ====== PAGE: CAJA ====== -->
+      <!-- ====== PAGE: CAJA (ADMIN) ====== -->
       <section id="page-caja" class="page">
         <div class="panel wide">
-          <h2>Caja del día</h2>
+          <h2>Caja</h2>
 
           <div class="filters-row">
             <div class="filter-group">
@@ -256,9 +274,8 @@
 
           <div class="caja-summary-grid">
             <div class="caja-card cash">
-              <h3>Efectivo (Cash)</h3>
+              <h3>Efectivo</h3>
               <p id="cajaTotalCash" class="caja-amount">$0.00</p>
-              <span class="caja-badge">Solo tickets en efectivo</span>
             </div>
             <div class="caja-card">
               <h3>ATH Móvil</h3>
@@ -269,118 +286,36 @@
               <p id="cajaTotalCard" class="caja-amount">$0.00</p>
             </div>
             <div class="caja-card total">
-              <h3>Total general</h3>
+              <h3>Total</h3>
               <p id="cajaTotalAll" class="caja-amount">$0.00</p>
-              <span class="caja-badge">Suma de todos los métodos</span>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ====== PAGE: CONFIGURACIÓN ====== -->
-      <section id="page-config" class="page">
-        <div class="panel wide">
-          <h2>Configuración de Nexus Salon</h2>
-
-          <div class="field-group">
-            <label class="field-label">Nombre de la app (header)</label>
-            <p class="msg-info small">Edita directamente el texto junto al logo en la barra superior.</p>
-          </div>
-
-          <div class="grid-2">
-            <div class="field-group">
-              <label class="field-label">URL del logo</label>
-              <input id="logoUrlInput" type="text" class="field-input" placeholder="https://...logo.png" />
-              <p class="msg-info small">
-                Si la dejas vacía se usará <code>assets/logo.png</code>. La URL se guarda en Firebase para sincronizar entre dispositivos.
-              </p>
-              <button id="saveBrandingBtn" class="btn btn-outline mt-4">Guardar branding en la nube</button>
-              <p id="brandingStatus" class="msg-info small"></p>
-            </div>
-
-            <div class="field-group">
-              <label class="field-label">Texto de header para PDF</label>
-              <textarea id="pdfHeaderText" rows="4" class="field-input" placeholder="Encabezado para tickets PDF"></textarea>
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Texto de footer para PDF</label>
-            <textarea id="pdfFooterText" rows="3" class="field-input" placeholder="Pie de página para tickets PDF"></textarea>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Texto de footer de la app</label>
-            <input id="footerTextInput" type="text" class="field-input" value="© 2025 Nexus Salon — Sistema de tickets" />
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">Cambiar PIN</label>
-            <div class="grid-2">
-              <input id="newPinInput" type="password" maxlength="6" class="field-input" placeholder="Nuevo PIN" />
-              <button id="changePinBtn" class="btn btn-outline">Guardar PIN</button>
-            </div>
-            <p id="pinChangeMessage" class="msg-info small"></p>
-          </div>
-
-          <div class="field-group">
-            <h3>Porcentajes de comisión</h3>
-            <p class="msg-info small">Estos valores se usan para calcular las comisiones.</p>
-
-            <div class="grid-2">
-              <div class="field-group">
-                <label class="field-label" for="commissionCynthia">% Cynthia</label>
-                <input id="commissionCynthia" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="40">
-              </div>
-
-              <div class="field-group">
-                <label class="field-label" for="commissionCarmen">% Carmen</label>
-                <input id="commissionCarmen" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="35">
-              </div>
-
-              <div class="field-group">
-                <label class="field-label" for="commissionYerika">% Yerika</label>
-                <input id="commissionYerika" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="35">
-              </div>
-
-              <div class="field-group">
-                <label class="field-label" for="commissionDefault">% Default (otras técnicas)</label>
-                <input id="commissionDefault" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="30">
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ====== PAGE: COMISIONES ====== -->
+      <!-- ====== PAGE: COMISIONES (ADMIN) ====== -->
       <section id="page-comisiones" class="page">
         <div class="panel wide">
           <div class="panel-header">
-            <h2>Comisiones por técnica</h2>
-            <p class="panel-subtitle">La comisión se calcula SOLO sobre servicio (cantidad × costo). NO incluye propina.</p>
+            <h2>Comisiones</h2>
+            <p class="panel-subtitle">Comisión se calcula sobre ventas SIN propinas.</p>
           </div>
 
           <div class="filters-row">
             <div class="filter-group">
-              <label for="comiStart">Desde</label>
+              <label>Desde</label>
               <input type="date" id="comiStart" class="field-input small">
             </div>
-
             <div class="filter-group">
-              <label for="comiEnd">Hasta</label>
+              <label>Hasta</label>
               <input type="date" id="comiEnd" class="field-input small">
             </div>
-
             <div class="filter-group">
-              <label for="comiTech">Técnica</label>
+              <label>Técnica</label>
               <select id="comiTech" class="field-input small">
                 <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
               </select>
             </div>
-
             <div class="filter-group filter-actions">
               <button id="comiApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
               <button id="comiClearBtn" class="btn btn-small btn-text">Limpiar</button>
@@ -392,8 +327,8 @@
               <thead>
                 <tr>
                   <th>Técnica</th>
-                  <th>% Comisión</th>
-                  <th>Total servicio</th>
+                  <th>%</th>
+                  <th>Ventas (sin propina)</th>
                   <th>Comisión</th>
                 </tr>
               </thead>
@@ -403,55 +338,41 @@
 
           <div class="caja-summary-grid">
             <div class="caja-card total">
-              <h3>Comisión total a pagar</h3>
+              <h3>Total comisión</h3>
               <p id="comiTotal" class="caja-amount">$0.00</p>
-              <span class="caja-badge">Suma de todas las técnicas filtradas</span>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ✅ NUEVO: PAGE: PROPINA -->
+      <!-- ====== PAGE: PROPINAS (ADMIN) ====== -->
       <section id="page-propinas" class="page">
         <div class="panel wide">
           <div class="panel-header">
             <h2>Propinas</h2>
-            <p class="panel-subtitle">Las propinas se totalizan aparte y NO afectan comisiones.</p>
+            <p class="panel-subtitle">Propinas NO se usan para comisión.</p>
           </div>
 
           <div class="filters-row">
             <div class="filter-group">
-              <label for="tipsStart">Desde</label>
-              <input type="date" id="tipsStart" class="field-input small">
+              <label>Desde</label>
+              <input type="date" id="tipStart" class="field-input small">
             </div>
-
             <div class="filter-group">
-              <label for="tipsEnd">Hasta</label>
-              <input type="date" id="tipsEnd" class="field-input small">
+              <label>Hasta</label>
+              <input type="date" id="tipEnd" class="field-input small">
             </div>
-
             <div class="filter-group">
-              <label for="tipsTech">Técnica</label>
-              <select id="tipsTech" class="field-input small">
-                <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
-              </select>
-            </div>
-
-            <div class="filter-group">
-              <label for="tipsGroup">Resumen</label>
-              <select id="tipsGroup" class="field-input small">
+              <label>Agrupar</label>
+              <select id="tipGroupBy" class="field-input small">
                 <option value="tech">Por técnica</option>
                 <option value="day">Por día</option>
                 <option value="week">Por semana</option>
               </select>
             </div>
-
             <div class="filter-group filter-actions">
-              <button id="tipsApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
-              <button id="tipsClearBtn" class="btn btn-small btn-text">Limpiar</button>
+              <button id="tipApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
+              <button id="tipClearBtn" class="btn btn-small btn-text">Limpiar</button>
             </div>
           </div>
 
@@ -460,7 +381,7 @@
               <thead>
                 <tr>
                   <th>Grupo</th>
-                  <th>Total propinas</th>
+                  <th>Propinas</th>
                 </tr>
               </thead>
               <tbody id="tipsTableBody"></tbody>
@@ -469,48 +390,41 @@
 
           <div class="caja-summary-grid">
             <div class="caja-card total">
-              <h3>Propinas totales</h3>
+              <h3>Total propinas</h3>
               <p id="tipsTotal" class="caja-amount">$0.00</p>
-              <span class="caja-badge">Suma del filtro actual</span>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ✅ NUEVO: PAGE: RETENCIONES 10% -->
+      <!-- ====== PAGE: RETENCIONES (ADMIN) ====== -->
       <section id="page-retenciones" class="page">
         <div class="panel wide">
           <div class="panel-header">
-            <h2>Retenciones de Hacienda (10%)</h2>
+            <h2>Retenciones Hacienda (10%)</h2>
             <p class="panel-subtitle">
-              Se calcula 10% sobre la comisión. Neto = Comisión - Retención. (Propinas no entran.)
+              Se calcula: <strong>(ventas sin propina - comisión) * 10%</strong>.
             </p>
           </div>
 
           <div class="filters-row">
             <div class="filter-group">
-              <label for="retenStart">Desde</label>
-              <input type="date" id="retenStart" class="field-input small">
+              <label>Desde</label>
+              <input type="date" id="retStart" class="field-input small">
             </div>
-
             <div class="filter-group">
-              <label for="retenEnd">Hasta</label>
-              <input type="date" id="retenEnd" class="field-input small">
+              <label>Hasta</label>
+              <input type="date" id="retEnd" class="field-input small">
             </div>
-
             <div class="filter-group">
-              <label for="retenTech">Técnica</label>
-              <select id="retenTech" class="field-input small">
+              <label>Técnica</label>
+              <select id="retTech" class="field-input small">
                 <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
               </select>
             </div>
-
             <div class="filter-group filter-actions">
-              <button id="retenApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
-              <button id="retenClearBtn" class="btn btn-small btn-text">Limpiar</button>
+              <button id="retApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
+              <button id="retClearBtn" class="btn btn-small btn-text">Limpiar</button>
             </div>
           </div>
 
@@ -519,24 +433,135 @@
               <thead>
                 <tr>
                   <th>Técnica</th>
-                  <th>Total servicio</th>
-                  <th>% Comisión</th>
+                  <th>Ventas (sin propina)</th>
                   <th>Comisión</th>
+                  <th>Base neta</th>
                   <th>Retención 10%</th>
                   <th>Neto a pagar</th>
                 </tr>
               </thead>
-              <tbody id="retenTableBody"></tbody>
+              <tbody id="retTableBody"></tbody>
             </table>
           </div>
 
           <div class="caja-summary-grid">
             <div class="caja-card total">
-              <h3>Neto total a pagar</h3>
-              <p id="retenTotal" class="caja-amount">$0.00</p>
-              <span class="caja-badge">Suma neta del filtro actual</span>
+              <h3>Total retenciones</h3>
+              <p id="retTotal" class="caja-amount">$0.00</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- ====== PAGE: CONFIG (ADMIN) ====== -->
+      <section id="page-config" class="page">
+        <div class="panel wide">
+          <h2>Configuración</h2>
+
+          <div class="grid-2">
+            <div class="field-group">
+              <label class="field-label">URL del logo</label>
+              <input id="logoUrlInput" type="text" class="field-input" placeholder="https://...logo.png" />
+              <button id="saveBrandingBtn" class="btn btn-outline mt-4">Guardar</button>
+              <p id="brandingStatus" class="msg-info small"></p>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Texto header PDF</label>
+              <textarea id="pdfHeaderText" rows="4" class="field-input"></textarea>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">Texto footer PDF</label>
+            <textarea id="pdfFooterText" rows="3" class="field-input"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">Texto footer app</label>
+            <input id="footerTextInput" type="text" class="field-input" value="© 2025 Nexus Salon — Sistema de tickets" />
+          </div>
+
+          <hr class="sep" />
+
+          <h3>Técnicas (CRUD)</h3>
+          <p class="msg-info small">Aquí controlas técnicas y su % de comisión.</p>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>% Comisión</th>
+                  <th>Activa</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="techTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="grid-3 mt-4">
+            <div class="field-group">
+              <label class="field-label">Nombre técnica</label>
+              <input id="techNameInput" type="text" class="field-input" placeholder="Ej. Cynthia" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">% Comisión</label>
+              <input id="techPercentInput" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="40" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">&nbsp;</label>
+              <div class="form-actions">
+                <button id="techSaveBtn" class="btn btn-primary">Guardar</button>
+                <button id="techCancelBtn" class="btn btn-secondary">Cancelar</button>
+              </div>
+            </div>
+          </div>
+
+          <hr class="sep" />
+
+          <h3>Usuarios empleados (CRUD)</h3>
+          <p class="msg-info small">Admin crea PIN y asigna a qué técnica pertenece el empleado.</p>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Rol</th>
+                  <th>Técnica</th>
+                  <th>Activo</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="grid-3 mt-4">
+            <div class="field-group">
+              <label class="field-label">Nombre</label>
+              <input id="userNameInput" type="text" class="field-input" placeholder="Ej. Carmen" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">PIN</label>
+              <input id="userPinInput" type="password" maxlength="6" class="field-input" placeholder="1234" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Técnica</label>
+              <select id="userTechSelect" class="field-input">
+                <option value="">Seleccionar...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button id="userCreateBtn" class="btn btn-primary">Crear empleado</button>
+            <button id="userCreateAdminBtn" class="btn btn-outline">Crear admin</button>
+          </div>
+
+          <p id="adminNote" class="msg-info small"></p>
         </div>
       </section>
 
@@ -555,7 +580,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-firestore-compat.js"></script>
 
-  <!-- App -->
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
