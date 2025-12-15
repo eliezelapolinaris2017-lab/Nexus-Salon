@@ -10,6 +10,7 @@
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="apple-mobile-web-app-title" content="Nexus Salon" />
   <link rel="apple-touch-icon" href="assets/logo.png" />
@@ -32,13 +33,28 @@
         </div>
       </div>
 
-      <label class="field-label" for="pinInput">Ingrese PIN de seguridad</label>
+      <!-- ADMIN (PIN MAESTRO) -->
+      <label class="field-label" for="pinInput">PIN ADMIN (maestro)</label>
       <input id="pinInput" type="password" maxlength="6" class="field-input" autocomplete="off" />
 
+      <div class="form-actions" style="margin-top:10px;">
+        <button id="pinEnterBtn" class="btn btn-primary">Entrar Admin</button>
+      </div>
+
+      <hr style="border:0;border-top:1px solid rgba(255,255,255,.08);margin:14px 0;">
+
+      <!-- EMPLEADO (NOMBRE + PIN) -->
+      <label class="field-label" for="empNameInput">Nombre (empleado)</label>
+      <input id="empNameInput" type="text" class="field-input" placeholder="Ej. Cynthia" autocomplete="off" />
+
+      <label class="field-label" for="empPinInput" style="margin-top:10px;">PIN (empleado)</label>
+      <input id="empPinInput" type="password" maxlength="6" class="field-input" autocomplete="off" />
+
+      <div class="form-actions" style="margin-top:10px;">
+        <button id="empEnterBtn" class="btn btn-secondary">Entrar Empleado</button>
+      </div>
+
       <p id="pinError" class="msg-error"></p>
-
-      <button id="pinEnterBtn" class="btn btn-primary">Entrar</button>
-
       <p class="pin-hint"></p>
     </div>
   </div>
@@ -48,12 +64,8 @@
     <div class="card card-auth">
       <h2>Conectar con Google</h2>
       <p>Inicia sesión con tu cuenta de Google para sincronizar tickets en todos los dispositivos.</p>
-      <button id="googleSignInBtn" class="btn btn-google">
-        Conectar con Google
-      </button>
-      <button id="authBackToPinBtn" class="btn btn-text">
-        Volver al PIN
-      </button>
+      <button id="googleSignInBtn" class="btn btn-google">Conectar con Google</button>
+      <button id="authBackToPinBtn" class="btn btn-text">Volver al PIN</button>
     </div>
   </div>
 
@@ -71,7 +83,7 @@
             <div class="app-name-row">
               <span id="appNameEditable" contenteditable="true" class="app-name">Nexus Salon</span>
             </div>
-            <small class="app-subtitle">Control de tickets para salón de belleza</small>
+            <small class="app-subtitle" id="sessionSubtitle">Control de tickets para salón de belleza</small>
           </div>
         </div>
       </div>
@@ -79,13 +91,11 @@
       <div class="topbar-center">
         <button data-page="dashboard" class="nav-btn nav-btn-active">Dashboard</button>
         <button data-page="historial" class="nav-btn">Historial</button>
-        <button data-page="caja" class="nav-btn">Caja</button>
-        <button data-page="config" class="nav-btn">Configuración</button>
-        <button data-page="comisiones" class="nav-btn">Comisiones</button>
-
-        <!-- ✅ NUEVO -->
-        <button data-page="propinas" class="nav-btn">Propinas</button>
-        <button data-page="retenciones" class="nav-btn">Retenciones 10%</button>
+        <button data-page="caja" class="nav-btn nav-admin">Caja</button>
+        <button data-page="config" class="nav-btn nav-admin">Configuración</button>
+        <button data-page="comisiones" class="nav-btn nav-admin">Comisiones</button>
+        <button data-page="propinas" class="nav-btn nav-admin">Propinas</button>
+        <button data-page="retenciones" class="nav-btn nav-admin">Retenciones 10%</button>
       </div>
 
       <div class="topbar-right">
@@ -125,13 +135,8 @@
           <div class="grid-2">
             <div class="field-group">
               <label class="field-label">Técnica</label>
-              <select id="technician" class="field-input">
-                <option value="">Seleccionar...</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
-              </select>
-              <input id="technicianCustom" type="text" class="field-input mt-4" placeholder="Otra técnica (opcional)" />
+              <select id="technician" class="field-input"></select>
+              <input id="technicianCustom" type="text" class="field-input mt-4" placeholder="Otra técnica (solo admin)" />
             </div>
             <div class="field-group">
               <label class="field-label">Método de pago</label>
@@ -184,13 +189,13 @@
         <div class="panel panel-history wide">
           <div class="panel-header">
             <h2>Historial de tickets</h2>
-            <div class="panel-header-actions">
+            <div class="panel-header-actions nav-admin">
               <button id="exportPdfBtn" class="btn btn-outline">Exportar PDF</button>
               <button id="backupJsonBtn" class="btn btn-outline">Backup JSON</button>
             </div>
           </div>
 
-          <div class="filters-row">
+          <div class="filters-row nav-admin">
             <div class="filter-group">
               <label>Desde</label>
               <input id="filterStart" type="date" class="field-input small">
@@ -201,12 +206,7 @@
             </div>
             <div class="filter-group">
               <label>Técnica</label>
-              <select id="filterTech" class="field-input small">
-                <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
-              </select>
+              <select id="filterTech" class="field-input small"></select>
             </div>
             <div class="filter-group filter-actions">
               <button id="applyFilterBtn" class="btn btn-small btn-primary">Filtrar</button>
@@ -225,7 +225,7 @@
                   <th>Servicio</th>
                   <th>Método</th>
                   <th>Total</th>
-                  <th>Acciones</th>
+                  <th class="nav-admin">Acciones</th>
                 </tr>
               </thead>
               <tbody id="ticketsTableBody"></tbody>
@@ -315,7 +315,7 @@
           </div>
 
           <div class="field-group">
-            <label class="field-label">Cambiar PIN</label>
+            <label class="field-label">Cambiar PIN ADMIN (maestro)</label>
             <div class="grid-2">
               <input id="newPinInput" type="password" maxlength="6" class="field-input" placeholder="Nuevo PIN" />
               <button id="changePinBtn" class="btn btn-outline">Guardar PIN</button>
@@ -323,32 +323,52 @@
             <p id="pinChangeMessage" class="msg-info small"></p>
           </div>
 
-          <div class="field-group">
-            <h3>Porcentajes de comisión</h3>
-            <p class="msg-info small">Estos valores se usan para calcular las comisiones.</p>
+          <!-- ✅ ADMIN: Técnicas + Usuarios -->
+          <div id="adminArea" class="field-group">
+            <h3>Administración: Técnicas y Usuarios (PIN empleado)</h3>
+            <p class="msg-info small">
+              Aquí el admin puede crear empleados por técnica y asignar su % de comisión. Los empleados entran con <strong>Nombre + PIN</strong>.
+            </p>
 
-            <div class="grid-2">
+            <div class="grid-3">
               <div class="field-group">
-                <label class="field-label" for="commissionCynthia">% Cynthia</label>
-                <input id="commissionCynthia" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="40">
+                <label class="field-label">Nombre (técnica/empleado)</label>
+                <input id="staffNameInput" type="text" class="field-input" placeholder="Ej. Cynthia">
               </div>
-
               <div class="field-group">
-                <label class="field-label" for="commissionCarmen">% Carmen</label>
-                <input id="commissionCarmen" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="35">
+                <label class="field-label">% Comisión</label>
+                <input id="staffRateInput" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="40">
               </div>
-
               <div class="field-group">
-                <label class="field-label" for="commissionYerika">% Yerika</label>
-                <input id="commissionYerika" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="35">
-              </div>
-
-              <div class="field-group">
-                <label class="field-label" for="commissionDefault">% Default (otras técnicas)</label>
-                <input id="commissionDefault" type="number" min="0" max="100" step="0.1" class="field-input" placeholder="30">
+                <label class="field-label">PIN empleado</label>
+                <input id="staffPinInput" type="password" maxlength="6" class="field-input" placeholder="1234">
               </div>
             </div>
+
+            <div class="form-actions">
+              <button id="addStaffBtn" class="btn btn-primary">Añadir / Actualizar</button>
+              <button id="resetStaffBtn" class="btn btn-text">Limpiar</button>
+            </div>
+
+            <div class="table-wrap" style="margin-top:12px;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Técnica</th>
+                    <th>% Comisión</th>
+                    <th>PIN</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="staffTableBody"></tbody>
+              </table>
+            </div>
+
+            <p class="msg-info small" style="margin-top:10px;">
+              * El PIN del empleado solo se usa para acceso interno.  
+            </p>
           </div>
+
         </div>
       </section>
 
@@ -365,22 +385,14 @@
               <label for="comiStart">Desde</label>
               <input type="date" id="comiStart" class="field-input small">
             </div>
-
             <div class="filter-group">
               <label for="comiEnd">Hasta</label>
               <input type="date" id="comiEnd" class="field-input small">
             </div>
-
             <div class="filter-group">
               <label for="comiTech">Técnica</label>
-              <select id="comiTech" class="field-input small">
-                <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
-              </select>
+              <select id="comiTech" class="field-input small"></select>
             </div>
-
             <div class="filter-group filter-actions">
               <button id="comiApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
               <button id="comiClearBtn" class="btn btn-small btn-text">Limpiar</button>
@@ -411,7 +423,7 @@
         </div>
       </section>
 
-      <!-- ✅ NUEVO: PAGE: PROPINA -->
+      <!-- PAGE: PROPINA -->
       <section id="page-propinas" class="page">
         <div class="panel wide">
           <div class="panel-header">
@@ -424,22 +436,14 @@
               <label for="tipsStart">Desde</label>
               <input type="date" id="tipsStart" class="field-input small">
             </div>
-
             <div class="filter-group">
               <label for="tipsEnd">Hasta</label>
               <input type="date" id="tipsEnd" class="field-input small">
             </div>
-
             <div class="filter-group">
               <label for="tipsTech">Técnica</label>
-              <select id="tipsTech" class="field-input small">
-                <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
-              </select>
+              <select id="tipsTech" class="field-input small"></select>
             </div>
-
             <div class="filter-group">
               <label for="tipsGroup">Resumen</label>
               <select id="tipsGroup" class="field-input small">
@@ -448,7 +452,6 @@
                 <option value="week">Por semana</option>
               </select>
             </div>
-
             <div class="filter-group filter-actions">
               <button id="tipsApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
               <button id="tipsClearBtn" class="btn btn-small btn-text">Limpiar</button>
@@ -477,13 +480,13 @@
         </div>
       </section>
 
-      <!-- ✅ NUEVO: PAGE: RETENCIONES 10% -->
+      <!-- PAGE: RETENCIONES -->
       <section id="page-retenciones" class="page">
         <div class="panel wide">
           <div class="panel-header">
             <h2>Retenciones de Hacienda (10%)</h2>
             <p class="panel-subtitle">
-              Se calcula 10% sobre la comisión. Neto = Comisión - Retención. (Propinas no entran.)
+              Retención = 10% de la comisión. Neto = Comisión - Retención. (Propinas no entran.)
             </p>
           </div>
 
@@ -492,22 +495,14 @@
               <label for="retenStart">Desde</label>
               <input type="date" id="retenStart" class="field-input small">
             </div>
-
             <div class="filter-group">
               <label for="retenEnd">Hasta</label>
               <input type="date" id="retenEnd" class="field-input small">
             </div>
-
             <div class="filter-group">
               <label for="retenTech">Técnica</label>
-              <select id="retenTech" class="field-input small">
-                <option value="">Todas</option>
-                <option value="Cynthia">Cynthia</option>
-                <option value="Carmen">Carmen</option>
-                <option value="Yerika">Yerika</option>
-              </select>
+              <select id="retenTech" class="field-input small"></select>
             </div>
-
             <div class="filter-group filter-actions">
               <button id="retenApplyBtn" class="btn btn-small btn-primary">Aplicar</button>
               <button id="retenClearBtn" class="btn btn-small btn-text">Limpiar</button>
@@ -556,6 +551,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-firestore-compat.js"></script>
 
   <!-- App -->
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
