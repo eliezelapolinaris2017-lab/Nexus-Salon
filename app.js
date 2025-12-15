@@ -1,4 +1,4 @@
-// app.js — Nexus Salon (Firestore, PIN, páginas + Caja + PWA)
+// app.js — Nexus Salon (Firestore, PIN, páginas + Caja + PWA) + Admin/Empleado + Técnicas dinámicas
 
 /* ========== CONFIG FIREBASE ========== */
 const firebaseConfig = {
@@ -16,37 +16,61 @@ const db = firebase.firestore();
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 /* ========== ESTADO LOCAL ========== */
-const LOCAL_KEY = "nexus_salon_state_v3";
+const LOCAL_KEY = "nexus_salon_state_v4";
 
 let state = {
+  // PIN maestro (admin)
   pin: "1234",
+
+  // Sesión local (rol)
+  session: {
+    role: null,       // "admin" | "employee"
+    employeeName: "", // si es empleado
+    techName: ""      // técnica asociada
+  },
+
   appName: "Nexus Salon",
   logoUrl: "",
   pdfHeaderText: "",
   pdfFooterText: "",
   footerText: "© 2025 Nexus Salon — Sistema de tickets",
+
   tickets: [],
-  commissionRates: {
-    Cynthia: 40,
-    Carmen: 35,
-    Yerika: 35,
-    default: 30
-  },
+
+  // Técnicas/usuarios (editable en Config)
+  // Cada técnica tiene pin de empleado + % comisión
+  staff: [
+    { name: "Cynthia", pin: "1111", rate: 40 },
+    { name: "Carmen",  pin: "2222", rate: 35 },
+    { name: "Yerika",  pin: "3333", rate: 35 }
+  ],
+  // Default si una técnica no está en staff
+  defaultRate: 30,
+
   user: null,
   unsubscribeTickets: null
 };
 
 let currentEditingNumber = null;
 
+/* ========== STORAGE ==========
+   Guardamos todo excepto auth listener */
 function loadState() {
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       state = { ...state, ...parsed };
-      if (!state.commissionRates) {
-        state.commissionRates = { Cynthia: 40, Carmen: 35, Yerika: 35, default: 30 };
+
+      if (!Array.isArray(state.staff) || !state.staff.length) {
+        state.staff = [
+          { name: "Cynthia", pin: "1111", rate: 40 },
+          { name: "Carmen",  pin: "2222", rate: 35 },
+          { name: "Yerika",  pin: "3333", rate: 35 }
+        ];
       }
+      if (!state.session) state.session = { role: null, employeeName: "", techName: "" };
+      if (state.defaultRate == null) state.defaultRate = 30;
     }
   } catch (e) {
     console.error("Error leyendo localStorage", e);
@@ -73,13 +97,21 @@ const pinScreen = document.getElementById("pinScreen");
 const authScreen = document.getElementById("authScreen");
 const appShell = document.getElementById("appShell");
 
+// PIN Admin
 const pinInput = document.getElementById("pinInput");
 const pinError = document.getElementById("pinError");
 const pinEnterBtn = document.getElementById("pinEnterBtn");
 
+// PIN Empleado
+const empNameInput = document.getElementById("empNameInput");
+const empPinInput = document.getElementById("empPinInput");
+const empEnterBtn = document.getElementById("empEnterBtn");
+
+// Auth
 const googleSignInBtn = document.getElementById("googleSignInBtn");
 const authBackToPinBtn = document.getElementById("authBackToPinBtn");
 
+// nav / topbar
 const appNameEditable = document.getElementById("appNameEditable");
 const pinAppNameTitle = document.getElementById("pinAppName");
 const userEmailSpan = document.getElementById("userEmail");
@@ -88,6 +120,7 @@ const appLogoImg = document.getElementById("appLogo");
 const pinLogoImg = document.getElementById("pinLogo");
 const footerTextSpan = document.getElementById("footerText");
 const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
+const sessionSubtitle = document.getElementById("sessionSubtitle");
 
 const pages = {
   dashboard: document.getElementById("page-dashboard"),
@@ -136,10 +169,14 @@ const pinChangeMessage = document.getElementById("pinChangeMessage");
 const saveBrandingBtn = document.getElementById("saveBrandingBtn");
 const brandingStatus = document.getElementById("brandingStatus");
 
-const commissionCynthiaInput = document.getElementById("commissionCynthia");
-const commissionCarmenInput = document.getElementById("commissionCarmen");
-const commissionYerikaInput = document.getElementById("commissionYerika");
-const commissionDefaultInput = document.getElementById("commissionDefault");
+// admin area (config)
+const adminArea = document.getElementById("adminArea");
+const staffNameInput = document.getElementById("staffNameInput");
+const staffRateInput = document.getElementById("staffRateInput");
+const staffPinInput = document.getElementById("staffPinInput");
+const addStaffBtn = document.getElementById("addStaffBtn");
+const resetStaffBtn = document.getElementById("resetStaffBtn");
+const staffTableBody = document.getElementById("staffTableBody");
 
 // caja
 const cajaStartInput = document.getElementById("cajaStart");
@@ -179,6 +216,129 @@ const retenClearBtn = document.getElementById("retenClearBtn");
 const retenTableBody = document.getElementById("retenTableBody");
 const retenTotalSpan = document.getElementById("retenTotal");
 
+/* ========== ROLE / PERMISOS ========== */
+function isAdmin() {
+  return state.session?.role === "admin";
+}
+function isEmployee() {
+  return state.session?.role === "employee";
+}
+
+/* ========== TÉCNICAS DINÁMICAS ========== */
+function normalizeName(s) {
+  return String(s || "").trim();
+}
+function staffNames() {
+  return (state.staff || []).map(x => x.name).filter(Boolean);
+}
+function findStaffByName(name) {
+  const n = normalizeName(name).toLowerCase();
+  return (state.staff || []).find(s => normalizeName(s.name).toLowerCase() === n) || null;
+}
+function getCommissionRateForTech(tech) {
+  const rec = findStaffByName(tech);
+  if (rec && rec.rate != null) return Number(rec.rate) || 0;
+  return Number(state.defaultRate) || 0;
+}
+
+/* ========== SELECTS: construir opciones ==========
+   - Admin: todas + "Seleccionar..."
+   - Empleado: solo su técnica */
+function fillTechSelect(selectEl, { includeAll = false, includeEmpty = false } = {}) {
+  if (!selectEl) return;
+  const current = selectEl.value;
+
+  selectEl.innerHTML = "";
+
+  if (includeEmpty) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Seleccionar...";
+    selectEl.appendChild(opt);
+  }
+
+  if (includeAll) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Todas";
+    selectEl.appendChild(opt);
+  }
+
+  const names = staffNames();
+
+  if (isEmployee()) {
+    const only = state.session.techName;
+    const opt = document.createElement("option");
+    opt.value = only;
+    opt.textContent = only;
+    selectEl.appendChild(opt);
+    selectEl.value = only;
+    return;
+  }
+
+  names.forEach((name) => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    selectEl.appendChild(opt);
+  });
+
+  // restaurar si aún existe
+  if (Array.from(selectEl.options).some(o => o.value === current)) {
+    selectEl.value = current;
+  }
+}
+
+function refreshAllTechSelects() {
+  // Dashboard: selector técnico
+  fillTechSelect(technicianSelect, { includeEmpty: true });
+
+  // Filtros (admin)
+  fillTechSelect(filterTechSelect, { includeAll: true });
+
+  // Comisiones / Propinas / Retenciones
+  fillTechSelect(comiTechSelect, { includeAll: true });
+  fillTechSelect(tipsTechSelect, { includeAll: true });
+  fillTechSelect(retenTechSelect, { includeAll: true });
+}
+
+/* ========== UI por rol ==========
+   Empleado: solo Dashboard + Historial. Oculta Admin nav y acciones. */
+function applyRoleUI() {
+  const adminEls = Array.from(document.querySelectorAll(".nav-admin"));
+  const adminNavBtns = Array.from(document.querySelectorAll(".nav-btn.nav-admin"));
+
+  if (isAdmin()) {
+    adminEls.forEach(el => (el.style.display = ""));
+    adminNavBtns.forEach(btn => (btn.style.display = ""));
+    if (technicianCustomInput) {
+      technicianCustomInput.disabled = false;
+      technicianCustomInput.placeholder = "Otra técnica (opcional)";
+    }
+    if (sessionSubtitle) sessionSubtitle.textContent = "Modo Admin — control total";
+    if (adminArea) adminArea.style.display = "";
+  } else {
+    adminEls.forEach(el => (el.style.display = "none"));
+    adminNavBtns.forEach(btn => (btn.style.display = "none"));
+
+    // empleado: fija técnica y bloquea custom
+    if (technicianCustomInput) {
+      technicianCustomInput.value = "";
+      technicianCustomInput.disabled = true;
+      technicianCustomInput.placeholder = "Solo admin";
+    }
+    if (sessionSubtitle) sessionSubtitle.textContent = `Empleado: ${state.session.employeeName} — Técnica: ${state.session.techName}`;
+    if (adminArea) adminArea.style.display = "none";
+
+    // si estaba en una pestaña admin, lo mandamos a dashboard
+    const allowed = ["dashboard", "historial"];
+    const active = Object.keys(pages).find(k => pages[k].classList.contains("active-page")) || "dashboard";
+    if (!allowed.includes(active)) setActivePage("dashboard");
+  }
+
+  refreshAllTechSelects();
+}
+
 /* ========== HELPERS ==========
    comisión SOLO sobre servicio: qty * unitPrice (NO incluye tip) */
 function serviceSubtotal(t) {
@@ -186,12 +346,6 @@ function serviceSubtotal(t) {
   const u = Number(t.unitPrice || 0);
   const s = q * u;
   return isFinite(s) ? s : 0;
-}
-
-function getCommissionRateForTech(tech) {
-  if (!state.commissionRates) return 0;
-  if (tech && state.commissionRates[tech] != null) return Number(state.commissionRates[tech]) || 0;
-  return Number(state.commissionRates.default) || 0;
 }
 
 /* ========== RENDER (branding + tickets + caja) ========== */
@@ -208,11 +362,6 @@ function renderBranding() {
   const logoSrc = state.logoUrl && state.logoUrl.trim() !== "" ? state.logoUrl.trim() : "assets/logo.png";
   appLogoImg.src = logoSrc;
   pinLogoImg.src = logoSrc;
-
-  if (commissionCynthiaInput) commissionCynthiaInput.value = state.commissionRates?.Cynthia ?? 40;
-  if (commissionCarmenInput) commissionCarmenInput.value = state.commissionRates?.Carmen ?? 35;
-  if (commissionYerikaInput) commissionYerikaInput.value = state.commissionRates?.Yerika ?? 35;
-  if (commissionDefaultInput) commissionDefaultInput.value = state.commissionRates?.default ?? 30;
 }
 
 function nextTicketNumber() {
@@ -225,8 +374,19 @@ function renderTicketNumber() {
   ticketNumberInput.value = nextTicketNumber();
 }
 
+/* ========== FILTRO POR EMPLEADO ==========
+   Empleado solo ve sus tickets */
+function roleFilteredTickets(list) {
+  if (!isEmployee()) return list;
+  const tech = state.session.techName;
+  return (list || []).filter(t => (t.technician || "") === tech);
+}
+
+/* 🔥 Historial */
 function renderTicketsTable(listOverride) {
-  const list = listOverride || state.tickets;
+  const base = listOverride || state.tickets;
+  const list = roleFilteredTickets(base);
+
   ticketsTableBody.innerHTML = "";
   list
     .slice()
@@ -241,7 +401,7 @@ function renderTicketsTable(listOverride) {
         <td>${t.serviceDesc || ""}</td>
         <td>${t.paymentMethod || ""}</td>
         <td>$${Number(t.totalAmount || 0).toFixed(2)}</td>
-        <td>
+        <td class="nav-admin">
           <button class="btn-table edit" data-action="edit" data-number="${t.number}">Editar</button>
           <button class="btn-table delete" data-action="delete" data-number="${t.number}">X</button>
         </td>
@@ -250,7 +410,10 @@ function renderTicketsTable(listOverride) {
     });
 }
 
+/* CAJA: totales por método (solo admin) */
 function computeCajaTotals() {
+  if (!isAdmin()) return;
+
   const start = cajaStartInput.value;
   const end = cajaEndInput.value;
 
@@ -277,6 +440,7 @@ function computeCajaTotals() {
 
 /* ========== COMISIONES (SIN PROPINA) ========== */
 function getFilteredTicketsForCommissions() {
+  if (!isAdmin()) return []; // empleados no ven
   const start = comiStartInput ? comiStartInput.value : "";
   const end = comiEndInput ? comiEndInput.value : "";
   const tech = comiTechSelect ? comiTechSelect.value : "";
@@ -291,6 +455,7 @@ function getFilteredTicketsForCommissions() {
 }
 
 function renderCommissionsSummary() {
+  if (!isAdmin()) return;
   if (!comiTableBody || !comiTotalSpan) return;
 
   let list = getFilteredTicketsForCommissions();
@@ -306,7 +471,7 @@ function renderCommissionsSummary() {
 
   list.forEach((t) => {
     const tech = t.technician || "Sin técnica";
-    const base = serviceSubtotal(t); // ✅ NO incluye tip
+    const base = serviceSubtotal(t);
     const rate = getCommissionRateForTech(tech);
     const commission = (base * rate) / 100;
 
@@ -333,7 +498,8 @@ function renderCommissionsSummary() {
   comiTotalSpan.textContent = `$${grandCommission.toFixed(2)}`;
 }
 
-/* ========== PROPINA (TAB NUEVA) ========== */
+/* ========== PROPINA ==========
+   Empleados NO ven esta pestaña (admin only) */
 function getWeekKey(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -345,6 +511,7 @@ function getWeekKey(dateStr) {
 }
 
 function getFilteredTicketsForTips() {
+  if (!isAdmin()) return [];
   const start = tipsStartInput ? tipsStartInput.value : "";
   const end = tipsEndInput ? tipsEndInput.value : "";
   const tech = tipsTechSelect ? tipsTechSelect.value : "";
@@ -359,6 +526,7 @@ function getFilteredTicketsForTips() {
 }
 
 function renderTipsSummary() {
+  if (!isAdmin()) return;
   if (!tipsTableBody || !tipsTotalSpan) return;
 
   const group = (tipsGroupSelect && tipsGroupSelect.value) ? tipsGroupSelect.value : "tech";
@@ -387,19 +555,17 @@ function renderTipsSummary() {
   tipsTableBody.innerHTML = "";
   rows.forEach((r) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${r.key}</td>
-      <td>$${r.total.toFixed(2)}</td>
-    `;
+    tr.innerHTML = `<td>${r.key}</td><td>$${r.total.toFixed(2)}</td>`;
     tipsTableBody.appendChild(tr);
   });
 
   tipsTotalSpan.textContent = `$${totalTips.toFixed(2)}`;
 }
 
-/* ========== RETENCIONES 10% (TAB NUEVA) ==========
-   Retención = 10% de la comisión, Neto = Comisión - Retención */
+/* ========== RETENCIONES 10% (admin only) ==========
+   Retención = 10% de la comisión */
 function getFilteredTicketsForReten() {
+  if (!isAdmin()) return [];
   const start = retenStartInput ? retenStartInput.value : "";
   const end = retenEndInput ? retenEndInput.value : "";
   const tech = retenTechSelect ? retenTechSelect.value : "";
@@ -414,6 +580,7 @@ function getFilteredTicketsForReten() {
 }
 
 function renderRetencionesSummary() {
+  if (!isAdmin()) return;
   if (!retenTableBody || !retenTotalSpan) return;
 
   const list = getFilteredTicketsForReten();
@@ -422,7 +589,7 @@ function renderRetencionesSummary() {
 
   list.forEach((t) => {
     const tech = t.technician || "Sin técnica";
-    const base = serviceSubtotal(t); // ✅ sin propina
+    const base = serviceSubtotal(t);
     const rate = getCommissionRateForTech(tech);
     const commission = (base * rate) / 100;
     const reten = commission * 0.10;
@@ -439,8 +606,8 @@ function renderRetencionesSummary() {
   });
 
   const rows = Object.values(byTech).sort((a, b) => a.technician.localeCompare(b.technician));
-
   retenTableBody.innerHTML = "";
+
   rows.forEach((r) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -462,14 +629,19 @@ function showPinScreen() {
   pinScreen.classList.remove("hidden");
   authScreen.classList.add("hidden");
   appShell.classList.add("hidden");
+
   pinInput.value = "";
+  if (empNameInput) empNameInput.value = "";
+  if (empPinInput) empPinInput.value = "";
   pinError.textContent = "";
 }
+
 function showAuthScreen() {
   pinScreen.classList.add("hidden");
   authScreen.classList.remove("hidden");
   appShell.classList.add("hidden");
 }
+
 function showAppShell() {
   pinScreen.classList.add("hidden");
   authScreen.classList.add("hidden");
@@ -477,9 +649,15 @@ function showAppShell() {
 }
 
 function setActivePage(pageName) {
+  // empleado: solo dashboard/historial
+  if (isEmployee() && !["dashboard", "historial"].includes(pageName)) {
+    pageName = "dashboard";
+  }
+
   Object.keys(pages).forEach((name) => {
     pages[name].classList.toggle("active-page", name === pageName);
   });
+
   navButtons.forEach((btn) => {
     const target = btn.getAttribute("data-page");
     btn.classList.toggle("nav-btn-active", target === pageName);
@@ -490,25 +668,56 @@ function setActivePage(pageName) {
   if (pageName === "retenciones") renderRetencionesSummary();
 }
 
-/* ========== PIN ========== */
-function handlePinEnter() {
+/* ========== LOGIN ==========
+   Admin: pin maestro
+   Empleado: nombre + pin (desde config) */
+function handleAdminPinEnter() {
   const v = (pinInput.value || "").trim();
-  if (!v) return (pinError.textContent = "Ingrese el PIN.");
+  if (!v) return (pinError.textContent = "Ingrese el PIN admin.");
   if (v === state.pin) {
+    state.session = { role: "admin", employeeName: "", techName: "" };
+    saveState();
     pinError.textContent = "";
-    if (state.user) showAppShell();
-    else showAuthScreen();
+    showAuthScreen(); // requiere Google para sincronizar
   } else {
-    pinError.textContent = "PIN incorrecto.";
+    pinError.textContent = "PIN admin incorrecto.";
   }
 }
 
-/* ========== AUTH + LISTENER ========== */
+function handleEmployeeEnter() {
+  const name = normalizeName(empNameInput.value);
+  const pin = String(empPinInput.value || "").trim();
+
+  if (!name || !pin) {
+    pinError.textContent = "Empleado: escribe Nombre y PIN.";
+    return;
+  }
+
+  const rec = findStaffByName(name);
+  if (!rec) {
+    pinError.textContent = "Empleado no existe (crearlo en Configuración).";
+    return;
+  }
+  if (String(rec.pin) !== pin) {
+    pinError.textContent = "PIN de empleado incorrecto.";
+    return;
+  }
+
+  // ok
+  state.session = { role: "employee", employeeName: rec.name, techName: rec.name };
+  saveState();
+  pinError.textContent = "";
+  showAuthScreen(); // requiere Google para sincronizar
+}
+
+/* ========== FIRESTORE LISTEN + AUTH ==========
+   (se mantiene igual) */
 function startTicketsListener() {
   if (state.unsubscribeTickets) {
     state.unsubscribeTickets();
     state.unsubscribeTickets = null;
   }
+
   state.unsubscribeTickets = ticketsCollectionRef()
     .orderBy("number", "asc")
     .onSnapshot(
@@ -521,6 +730,7 @@ function startTicketsListener() {
         renderTicketNumber();
         renderTicketsTable();
         computeCajaTotals();
+
         renderCommissionsSummary();
         renderTipsSummary();
         renderRetencionesSummary();
@@ -535,9 +745,13 @@ async function signInWithGoogle() {
     state.user = result.user;
     userEmailSpan.textContent = state.user.email || "";
     saveState();
+
     await loadBrandingFromCloud();
     startTicketsListener();
+
     showAppShell();
+    applyRoleUI();
+    setActivePage("dashboard");
   } catch (err) {
     console.error("Error Google SignIn", err);
     alert("No se pudo iniciar sesión con Google.");
@@ -546,9 +760,15 @@ async function signInWithGoogle() {
 
 async function signOutAndReset() {
   try { await auth.signOut(); } catch (e) { console.error("Error signOut", e); }
-  if (state.unsubscribeTickets) { state.unsubscribeTickets(); state.unsubscribeTickets = null; }
+
+  if (state.unsubscribeTickets) {
+    state.unsubscribeTickets();
+    state.unsubscribeTickets = null;
+  }
+
   state.user = null;
   userEmailSpan.textContent = "Sin conexión a Google";
+  state.session = { role: null, employeeName: "", techName: "" };
   saveState();
   showPinScreen();
 }
@@ -581,14 +801,22 @@ function resetFormForNewTicket() {
   const today = new Date();
   ticketDateInput.value = today.toISOString().slice(0, 10);
   clientNameInput.value = "";
-  technicianSelect.value = "";
-  technicianCustomInput.value = "";
+
+  if (isEmployee()) {
+    technicianSelect.value = state.session.techName || "";
+    technicianCustomInput.value = "";
+  } else {
+    technicianSelect.value = "";
+    technicianCustomInput.value = "";
+  }
+
   paymentMethodSelect.value = "";
   serviceDescInput.value = "";
   quantityInput.value = 1;
   unitPriceInput.value = "";
   tipAmountInput.value = "";
   recalcTotal();
+
   ticketNumberInput.value = nextTicketNumber();
   formMessage.textContent = "";
   currentEditingNumber = null;
@@ -598,9 +826,17 @@ function collectTicketFromForm() {
   const number = Number(ticketNumberInput.value || 0);
   const date = ticketDateInput.value;
   const clientName = clientNameInput.value.trim();
-  const techPre = technicianSelect.value;
-  const techCustom = technicianCustomInput.value.trim();
-  const technician = techCustom || techPre || "";
+
+  // empleado: técnica fija
+  let technician = "";
+  if (isEmployee()) {
+    technician = state.session.techName || "";
+  } else {
+    const techPre = technicianSelect.value;
+    const techCustom = technicianCustomInput.value.trim();
+    technician = techCustom || techPre || "";
+  }
+
   const paymentMethod = paymentMethodSelect.value;
   const serviceDesc = serviceDescInput.value.trim();
   const quantity = Number(quantityInput.value || 0);
@@ -613,8 +849,16 @@ function collectTicketFromForm() {
   }
 
   return {
-    number, date, clientName, technician, paymentMethod, serviceDesc,
-    quantity, unitPrice, tipAmount, totalAmount,
+    number,
+    date,
+    clientName,
+    technician,
+    paymentMethod,
+    serviceDesc,
+    quantity,
+    unitPrice,
+    tipAmount,
+    totalAmount,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
 }
@@ -624,6 +868,11 @@ async function saveTicket() {
     formMessage.textContent = "Conéctate con Google antes de guardar tickets.";
     return;
   }
+  if (!state.session?.role) {
+    formMessage.textContent = "Inicia sesión (admin o empleado) primero.";
+    return;
+  }
+
   try {
     const ticket = collectTicketFromForm();
     const docId = String(ticket.number);
@@ -654,14 +903,6 @@ async function loadBrandingFromCloud() {
       if (data.pdfHeaderText !== undefined) state.pdfHeaderText = data.pdfHeaderText;
       if (data.pdfFooterText !== undefined) state.pdfFooterText = data.pdfFooterText;
       if (data.footerText !== undefined) state.footerText = data.footerText;
-      if (data.commissionRates !== undefined) {
-        state.commissionRates = {
-          Cynthia: data.commissionRates.Cynthia ?? 40,
-          Carmen: data.commissionRates.Carmen ?? 35,
-          Yerika: data.commissionRates.Yerika ?? 35,
-          default: data.commissionRates.default ?? 30
-        };
-      }
       saveState();
       renderBranding();
     }
@@ -681,8 +922,7 @@ async function saveBrandingToCloud() {
       logoUrl: state.logoUrl || "",
       pdfHeaderText: state.pdfHeaderText || "",
       pdfFooterText: state.pdfFooterText || "",
-      footerText: state.footerText || "",
-      commissionRates: state.commissionRates || { Cynthia: 40, Carmen: 35, Yerika: 35, default: 30 }
+      footerText: state.footerText || ""
     };
     await brandingDocRef().set(payload, { merge: true });
     brandingStatus.textContent = "Branding guardado en Firebase.";
@@ -692,11 +932,72 @@ async function saveBrandingToCloud() {
   }
 }
 
-/* ========== FILTROS / LISTA ========== */
+/* ========== CONFIG: ADMIN STAFF (CRUD) ==========
+   Guardado local; si quieres luego lo subimos a Firestore, pero ahora NO tocamos eso. */
+function renderStaffTable() {
+  if (!staffTableBody) return;
+
+  staffTableBody.innerHTML = "";
+  (state.staff || [])
+    .slice()
+    .sort((a, b) => normalizeName(a.name).localeCompare(normalizeName(b.name)))
+    .forEach((s) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${normalizeName(s.name)}</td>
+        <td>${Number(s.rate || 0).toFixed(1)}%</td>
+        <td>${String(s.pin || "")}</td>
+        <td>
+          <button class="btn-table edit" data-staff-action="edit" data-staff-name="${normalizeName(s.name)}">Editar</button>
+          <button class="btn-table delete" data-staff-action="delete" data-staff-name="${normalizeName(s.name)}">X</button>
+        </td>
+      `;
+      staffTableBody.appendChild(tr);
+    });
+}
+
+function addOrUpdateStaff() {
+  if (!isAdmin()) return;
+
+  const name = normalizeName(staffNameInput.value);
+  const pin = String(staffPinInput.value || "").trim();
+  const rate = Number(staffRateInput.value || 0);
+
+  if (!name) return alert("Escribe el nombre de la técnica/empleado.");
+  if (!pin || pin.length < 4) return alert("El PIN empleado debe tener al menos 4 dígitos.");
+  if (!isFinite(rate) || rate < 0 || rate > 100) return alert("El % comisión debe estar entre 0 y 100.");
+
+  const existing = findStaffByName(name);
+  if (existing) {
+    existing.name = name; // respeta capitalización nueva
+    existing.pin = pin;
+    existing.rate = rate;
+  } else {
+    state.staff.push({ name, pin, rate });
+  }
+
+  saveState();
+  renderStaffTable();
+  refreshAllTechSelects();
+  resetStaffForm();
+}
+
+function resetStaffForm() {
+  if (!staffNameInput) return;
+  staffNameInput.value = "";
+  staffRateInput.value = "";
+  staffPinInput.value = "";
+}
+
+/* ========== FILTROS / LISTA ==========
+   - Admin: usa filtros normales
+   - Empleado: ignora filtro técnica y fuerza su técnica */
 function getFilteredTickets() {
-  const start = filterStartInput.value;
-  const end = filterEndInput.value;
-  const tech = filterTechSelect.value;
+  const start = filterStartInput?.value || "";
+  const end = filterEndInput?.value || "";
+
+  let tech = filterTechSelect?.value || "";
+  if (isEmployee()) tech = state.session.techName || "";
 
   return state.tickets.filter((t) => {
     if (!t.date) return false;
@@ -707,8 +1008,10 @@ function getFilteredTickets() {
   });
 }
 
-/* ========== PDF + BACKUP JSON (igual que el tuyo) ========== */
+/* ========== PDF + BACKUP JSON ==========
+   Admin only (para no mezclar permisos) */
 function exportTicketsToPDF() {
+  if (!isAdmin()) return alert("Solo admin puede exportar PDF.");
   const jsPDFLib = window.jspdf && window.jspdf.jsPDF;
   if (!jsPDFLib) return alert("La librería jsPDF no se cargó.");
 
@@ -754,7 +1057,6 @@ function exportTicketsToPDF() {
 
   list.forEach((t) => {
     if (y > 270) { doc.addPage(); y = 14; }
-
     const total = Number(t.totalAmount || 0);
     grandTotal += total;
 
@@ -785,6 +1087,7 @@ function exportTicketsToPDF() {
 }
 
 function downloadBackupJson() {
+  if (!isAdmin()) return alert("Solo admin puede crear backup.");
   const list = getFilteredTickets();
   if (!list.length) return alert("No hay tickets para exportar con el filtro actual.");
 
@@ -799,8 +1102,9 @@ function downloadBackupJson() {
   URL.revokeObjectURL(url);
 }
 
-/* ========== CAMBIAR PIN ========== */
+/* ========== CAMBIAR PIN MAESTRO ========== */
 function changePin() {
+  if (!isAdmin()) return alert("Solo admin puede cambiar PIN maestro.");
   const newPin = (newPinInput.value || "").trim();
   if (!newPin || newPin.length < 4) {
     pinChangeMessage.textContent = "El PIN debe tener al menos 4 dígitos.";
@@ -812,14 +1116,19 @@ function changePin() {
   newPinInput.value = "";
 }
 
-/* ========== EVENTOS ========== */
-pinEnterBtn.addEventListener("click", handlePinEnter);
-pinInput.addEventListener("keyup", (e) => { if (e.key === "Enter") handlePinEnter(); });
+/* ========== EVENTOS ==========
+   Login */
+pinEnterBtn.addEventListener("click", handleAdminPinEnter);
+pinInput.addEventListener("keyup", (e) => { if (e.key === "Enter") handleAdminPinEnter(); });
+
+if (empEnterBtn) empEnterBtn.addEventListener("click", handleEmployeeEnter);
+if (empPinInput) empPinInput.addEventListener("keyup", (e) => { if (e.key === "Enter") handleEmployeeEnter(); });
 
 googleSignInBtn.addEventListener("click", signInWithGoogle);
 authBackToPinBtn.addEventListener("click", showPinScreen);
 logoutBtn.addEventListener("click", signOutAndReset);
 
+/* nav */
 navButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     const page = btn.getAttribute("data-page");
@@ -827,52 +1136,116 @@ navButtons.forEach((btn) => {
   });
 });
 
+/* Branding inputs */
 appNameEditable.addEventListener("input", () => {
+  if (!isAdmin()) return; // solo admin cambia nombre app
   state.appName = appNameEditable.textContent.trim() || "Nexus Salon";
   saveState();
   renderBranding();
 });
 
 logoUrlInput.addEventListener("input", () => {
+  if (!isAdmin()) return;
   state.logoUrl = logoUrlInput.value.trim();
   saveState();
   renderBranding();
 });
 
-pdfHeaderTextArea.addEventListener("input", () => { state.pdfHeaderText = pdfHeaderTextArea.value; saveState(); });
-pdfFooterTextArea.addEventListener("input", () => { state.pdfFooterText = pdfFooterTextArea.value; saveState(); });
+pdfHeaderTextArea.addEventListener("input", () => {
+  if (!isAdmin()) return;
+  state.pdfHeaderText = pdfHeaderTextArea.value;
+  saveState();
+});
+
+pdfFooterTextArea.addEventListener("input", () => {
+  if (!isAdmin()) return;
+  state.pdfFooterText = pdfFooterTextArea.value;
+  saveState();
+});
 
 footerTextInput.addEventListener("input", () => {
+  if (!isAdmin()) return;
   state.footerText = footerTextInput.value;
   saveState();
   footerTextSpan.textContent = state.footerText;
 });
 
-saveBrandingBtn.addEventListener("click", (e) => { e.preventDefault(); saveBrandingToCloud(); });
+saveBrandingBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (!isAdmin()) return alert("Solo admin.");
+  saveBrandingToCloud();
+});
 
-if (commissionCynthiaInput) commissionCynthiaInput.addEventListener("input", () => { state.commissionRates.Cynthia = Number(commissionCynthiaInput.value || 0); saveState(); });
-if (commissionCarmenInput) commissionCarmenInput.addEventListener("input", () => { state.commissionRates.Carmen = Number(commissionCarmenInput.value || 0); saveState(); });
-if (commissionYerikaInput) commissionYerikaInput.addEventListener("input", () => { state.commissionRates.Yerika = Number(commissionYerikaInput.value || 0); saveState(); });
-if (commissionDefaultInput) commissionDefaultInput.addEventListener("input", () => { state.commissionRates.default = Number(commissionDefaultInput.value || 0); saveState(); });
+changePinBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  changePin();
+});
 
-changePinBtn.addEventListener("click", (e) => { e.preventDefault(); changePin(); });
+/* Admin staff CRUD */
+if (addStaffBtn) addStaffBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  addOrUpdateStaff();
+});
+if (resetStaffBtn) resetStaffBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  resetStaffForm();
+});
 
+if (staffTableBody) {
+  staffTableBody.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-staff-action]");
+    if (!btn) return;
+    if (!isAdmin()) return;
+
+    const action = btn.dataset.staffAction;
+    const name = btn.dataset.staffName;
+
+    const rec = findStaffByName(name);
+    if (!rec) return;
+
+    if (action === "edit") {
+      staffNameInput.value = rec.name;
+      staffRateInput.value = rec.rate;
+      staffPinInput.value = rec.pin;
+      return;
+    }
+
+    if (action === "delete") {
+      const ok = confirm(`¿Eliminar técnica/empleado "${rec.name}"?`);
+      if (!ok) return;
+
+      state.staff = (state.staff || []).filter(s => normalizeName(s.name).toLowerCase() !== normalizeName(rec.name).toLowerCase());
+      saveState();
+      renderStaffTable();
+      refreshAllTechSelects();
+      resetStaffForm();
+    }
+  });
+}
+
+/* Dashboard */
 newTicketBtn.addEventListener("click", (e) => { e.preventDefault(); resetFormForNewTicket(); });
-
 quantityInput.addEventListener("input", recalcTotal);
 unitPriceInput.addEventListener("input", recalcTotal);
 tipAmountInput.addEventListener("input", recalcTotal);
-
 saveTicketBtn.addEventListener("click", (e) => { e.preventDefault(); saveTicket(); });
 
+/* Historial filtros */
 applyFilterBtn.addEventListener("click", () => { renderTicketsTable(getFilteredTickets()); });
 clearFilterBtn.addEventListener("click", () => {
-  filterStartInput.value = "";
-  filterEndInput.value = "";
-  filterTechSelect.value = "";
+  if (isEmployee()) {
+    // empleado: no limpia su técnica, solo fechas
+    filterStartInput.value = "";
+    filterEndInput.value = "";
+  } else {
+    filterStartInput.value = "";
+    filterEndInput.value = "";
+    filterTechSelect.value = "";
+  }
   renderTicketsTable();
 });
 
+/* Caja (admin) */
 cajaApplyBtn.addEventListener("click", () => computeCajaTotals());
 cajaClearBtn.addEventListener("click", () => {
   const today = new Date().toISOString().slice(0, 10);
@@ -881,20 +1254,24 @@ cajaClearBtn.addEventListener("click", () => {
   computeCajaTotals();
 });
 
+/* Export */
 exportPdfBtn.addEventListener("click", exportTicketsToPDF);
 backupJsonBtn.addEventListener("click", downloadBackupJson);
 
+/* Comisiones */
 if (comiApplyBtn) comiApplyBtn.addEventListener("click", () => renderCommissionsSummary());
 if (comiClearBtn) comiClearBtn.addEventListener("click", () => {
+  if (!isAdmin()) return;
   comiStartInput.value = "";
   comiEndInput.value = "";
   comiTechSelect.value = "";
   renderCommissionsSummary();
 });
 
-// Propinas
+/* Propinas */
 if (tipsApplyBtn) tipsApplyBtn.addEventListener("click", () => renderTipsSummary());
 if (tipsClearBtn) tipsClearBtn.addEventListener("click", () => {
+  if (!isAdmin()) return;
   tipsStartInput.value = "";
   tipsEndInput.value = "";
   tipsTechSelect.value = "";
@@ -902,19 +1279,22 @@ if (tipsClearBtn) tipsClearBtn.addEventListener("click", () => {
   renderTipsSummary();
 });
 
-// Retenciones
+/* Retenciones */
 if (retenApplyBtn) retenApplyBtn.addEventListener("click", () => renderRetencionesSummary());
 if (retenClearBtn) retenClearBtn.addEventListener("click", () => {
+  if (!isAdmin()) return;
   retenStartInput.value = "";
   retenEndInput.value = "";
   retenTechSelect.value = "";
   renderRetencionesSummary();
 });
 
-/* Editar / eliminar desde la tabla */
+/* Editar / eliminar (admin only) */
 ticketsTableBody.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
+
+  if (!isAdmin()) return; // empleado no edita ni borra
 
   const action = btn.dataset.action;
   const number = Number(btn.dataset.number);
@@ -934,13 +1314,10 @@ ticketsTableBody.addEventListener("click", async (e) => {
     unitPriceInput.value = ticket.unitPrice;
     tipAmountInput.value = ticket.tipAmount || 0;
 
-    if (["Cynthia", "Carmen", "Yerika"].includes(ticket.technician)) {
-      technicianSelect.value = ticket.technician;
-      technicianCustomInput.value = "";
-    } else {
-      technicianSelect.value = "";
-      technicianCustomInput.value = ticket.technician || "";
-    }
+    // Técnica
+    fillTechSelect(technicianSelect, { includeEmpty: true });
+    technicianSelect.value = ticket.technician || "";
+    technicianCustomInput.value = "";
 
     paymentMethodSelect.value = ticket.paymentMethod;
 
@@ -968,9 +1345,15 @@ ticketsTableBody.addEventListener("click", async (e) => {
 function init() {
   loadState();
   renderBranding();
+
+  // selects dinámicos
+  refreshAllTechSelects();
+  renderStaffTable();
+
   renderTicketNumber();
   renderTicketsTable(state.tickets);
 
+  // caja: por defecto hoy
   const today = new Date().toISOString().slice(0, 10);
   cajaStartInput.value = today;
   cajaEndInput.value = today;
@@ -980,8 +1363,11 @@ function init() {
   setActivePage("dashboard");
   showPinScreen();
 
+  // PWA
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js").catch((err) => console.error("SW error", err));
+    navigator.serviceWorker
+      .register("service-worker.js")
+      .catch((err) => console.error("SW error", err));
   }
 }
 
