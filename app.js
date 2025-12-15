@@ -216,6 +216,9 @@ const retenClearBtn = document.getElementById("retenClearBtn");
 const retenTableBody = document.getElementById("retenTableBody");
 const retenTotalSpan = document.getElementById("retenTotal");
 
+// ✅ NUEVO (opcional): botón Exportar PDF de Retenciones
+const retenPdfBtn = document.getElementById("retenPdfBtn");
+
 /* ========== ROLE / PERMISOS ========== */
 function isAdmin() {
   return state.session?.role === "admin";
@@ -622,6 +625,194 @@ function renderRetencionesSummary() {
   });
 
   retenTotalSpan.textContent = `$${netGrand.toFixed(2)}`;
+}
+
+/* ========== ✅ NUEVO: PDF RETENCIONES POR EMPLEADO ==========
+   - Usa los filtros de la pestaña Retenciones (desde/hasta/técnica)
+   - Genera resumen por empleado
+   - Si seleccionas una técnica específica, añade detalle de tickets de esa técnica */
+function exportRetencionesPDF() {
+  if (!isAdmin()) return alert("Solo admin puede exportar PDF de retenciones.");
+
+  const jsPDFLib = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPDFLib) return alert("La librería jsPDF no se cargó.");
+
+  const list = getFilteredTicketsForReten();
+  if (!list.length) return alert("No hay datos de retenciones con el filtro actual.");
+
+  const start = (retenStartInput && retenStartInput.value) ? retenStartInput.value : "";
+  const end = (retenEndInput && retenEndInput.value) ? retenEndInput.value : "";
+  const techFilter = (retenTechSelect && retenTechSelect.value) ? retenTechSelect.value : "";
+
+  // agrupar por técnica
+  const byTech = {};
+  list.forEach((t) => {
+    const tech = t.technician || "Sin técnica";
+    const base = serviceSubtotal(t);
+    const rate = getCommissionRateForTech(tech);
+    const commission = (base * rate) / 100;
+    const reten = commission * 0.10;
+    const net = commission - reten;
+
+    if (!byTech[tech]) byTech[tech] = { tech, base: 0, commission: 0, reten: 0, net: 0, rate, tickets: [] };
+    byTech[tech].base += base;
+    byTech[tech].commission += commission;
+    byTech[tech].reten += reten;
+    byTech[tech].net += net;
+    byTech[tech].tickets.push(t);
+  });
+
+  const rows = Object.values(byTech).sort((a, b) => a.tech.localeCompare(b.tech));
+
+  const doc = new jsPDFLib({ orientation: "p", unit: "mm", format: "a4" });
+  const marginLeft = 12;
+  let y = 14;
+
+  // Header
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(state.appName || "Nexus Salon", marginLeft, y);
+  y += 6;
+
+  doc.setFontSize(12);
+  doc.text("Retenciones de Hacienda (10%) — Resumen por Empleado", marginLeft, y);
+  y += 6;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+
+  if (state.pdfHeaderText) {
+    const lines = doc.splitTextToSize(state.pdfHeaderText, 180);
+    doc.text(lines, marginLeft, y);
+    y += lines.length * 4 + 2;
+  }
+
+  const now = new Date();
+  const rangeTxt = `Rango: ${start || "—"} a ${end || "—"}${techFilter ? ` | Técnica: ${techFilter}` : ""}`;
+  doc.text(rangeTxt, marginLeft, y);
+  y += 5;
+  doc.text(`Generado: ${now.toLocaleString()}`, marginLeft, y);
+  y += 7;
+
+  // Tabla resumen
+  doc.setFont("helvetica", "bold");
+  doc.text("Técnica", marginLeft, y);
+  doc.text("Servicio", marginLeft + 62, y, { align: "right" });
+  doc.text("Comisión", marginLeft + 102, y, { align: "right" });
+  doc.text("Ret 10%", marginLeft + 142, y, { align: "right" });
+  doc.text("Neto", marginLeft + 188, y, { align: "right" });
+  y += 4;
+
+  doc.setFont("helvetica", "normal");
+
+  let grandBase = 0, grandCom = 0, grandRet = 0, grandNet = 0;
+
+  rows.forEach((r) => {
+    if (y > 270) { doc.addPage(); y = 14; }
+
+    grandBase += r.base;
+    grandCom += r.commission;
+    grandRet += r.reten;
+    grandNet += r.net;
+
+    doc.text(String(r.tech).substring(0, 22), marginLeft, y);
+    doc.text(`$${r.base.toFixed(2)}`, marginLeft + 62, y, { align: "right" });
+    doc.text(`$${r.commission.toFixed(2)}`, marginLeft + 102, y, { align: "right" });
+    doc.text(`$${r.reten.toFixed(2)}`, marginLeft + 142, y, { align: "right" });
+    doc.text(`$${r.net.toFixed(2)}`, marginLeft + 188, y, { align: "right" });
+    y += 4;
+  });
+
+  y += 6;
+  if (y > 270) { doc.addPage(); y = 14; }
+
+  doc.setFont("helvetica", "bold");
+  doc.text("TOTALES:", marginLeft, y);
+  doc.text(`$${grandBase.toFixed(2)}`, marginLeft + 62, y, { align: "right" });
+  doc.text(`$${grandCom.toFixed(2)}`, marginLeft + 102, y, { align: "right" });
+  doc.text(`$${grandRet.toFixed(2)}`, marginLeft + 142, y, { align: "right" });
+  doc.text(`$${grandNet.toFixed(2)}`, marginLeft + 188, y, { align: "right" });
+  y += 8;
+
+  // Si hay una técnica específica seleccionada, agregamos detalle de tickets
+  if (techFilter && byTech[techFilter] && byTech[techFilter].tickets?.length) {
+    doc.addPage();
+    y = 14;
+
+    const r = byTech[techFilter];
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(`Detalle — ${techFilter}`, marginLeft, y);
+    y += 6;
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`% Comisión: ${(getCommissionRateForTech(techFilter)).toFixed(1)}%`, marginLeft, y);
+    y += 6;
+
+    // Encabezados detalle
+    doc.setFont("helvetica", "bold");
+    doc.text("#", marginLeft, y);
+    doc.text("Fecha", marginLeft + 12, y);
+    doc.text("Cliente", marginLeft + 34, y);
+    doc.text("Servicio", marginLeft + 78, y);
+    doc.text("Base", marginLeft + 125, y, { align: "right" });
+    doc.text("Comisión", marginLeft + 152, y, { align: "right" });
+    doc.text("Ret", marginLeft + 172, y, { align: "right" });
+    doc.text("Neto", marginLeft + 188, y, { align: "right" });
+    y += 4;
+
+    doc.setFont("helvetica", "normal");
+
+    const ticketsSorted = r.tickets.slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+    ticketsSorted.forEach((t) => {
+      if (y > 270) { doc.addPage(); y = 14; }
+
+      const base = serviceSubtotal(t);
+      const rate = getCommissionRateForTech(techFilter);
+      const commission = (base * rate) / 100;
+      const reten = commission * 0.10;
+      const net = commission - reten;
+
+      doc.text(String(t.number || ""), marginLeft, y);
+      doc.text(String(t.date || ""), marginLeft + 12, y);
+      doc.text(String(t.clientName || "").substring(0, 18), marginLeft + 34, y);
+      doc.text(String(t.serviceDesc || "").substring(0, 20), marginLeft + 78, y);
+
+      doc.text(`$${base.toFixed(2)}`, marginLeft + 125, y, { align: "right" });
+      doc.text(`$${commission.toFixed(2)}`, marginLeft + 152, y, { align: "right" });
+      doc.text(`$${reten.toFixed(2)}`, marginLeft + 172, y, { align: "right" });
+      doc.text(`$${net.toFixed(2)}`, marginLeft + 188, y, { align: "right" });
+
+      y += 4;
+    });
+
+    y += 8;
+    if (y > 270) { doc.addPage(); y = 14; }
+
+    doc.setFont("helvetica", "bold");
+    doc.text("TOTAL TÉCNICA:", marginLeft, y);
+    doc.text(`$${r.base.toFixed(2)}`, marginLeft + 125, y, { align: "right" });
+    doc.text(`$${r.commission.toFixed(2)}`, marginLeft + 152, y, { align: "right" });
+    doc.text(`$${r.reten.toFixed(2)}`, marginLeft + 172, y, { align: "right" });
+    doc.text(`$${r.net.toFixed(2)}`, marginLeft + 188, y, { align: "right" });
+  }
+
+  // Footer PDF
+  if (state.pdfFooterText) {
+    const footerLines = doc.splitTextToSize(state.pdfFooterText, 180);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(footerLines, marginLeft, 288);
+  }
+
+  const fname = techFilter
+    ? `retenciones-${techFilter}-${start || "all"}-${end || "all"}.pdf`
+    : `retenciones-resumen-${start || "all"}-${end || "all"}.pdf`;
+
+  doc.save(fname);
 }
 
 /* ========== VISTAS / PÁGINAS ========== */
@@ -1288,6 +1479,14 @@ if (retenClearBtn) retenClearBtn.addEventListener("click", () => {
   retenTechSelect.value = "";
   renderRetencionesSummary();
 });
+
+// ✅ NUEVO: Exportar PDF Retenciones
+if (retenPdfBtn) {
+  retenPdfBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    exportRetencionesPDF();
+  });
+}
 
 /* Editar / eliminar (admin only) */
 ticketsTableBody.addEventListener("click", async (e) => {
