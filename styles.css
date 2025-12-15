@@ -10,6 +10,11 @@
   --shadow-soft: 0 24px 80px rgba(0, 0, 0, 0.9);
   --radius-lg: 18px;
   --radius-md: 12px;
+
+  /* 🔥 NUEVO (solo para resaltar cajas sin cambiar colores) */
+  --panel-strong: rgba(18, 18, 18, 0.92);
+  --panel-edge: rgba(251, 191, 36, 0.14);
+  --glow: 0 0 0 1px rgba(251, 191, 36, 0.10), 0 18px 60px rgba(0,0,0,0.85);
 }
 
 *,
@@ -22,11 +27,19 @@ html, body {
   height: 100%;
 }
 
+/* ✅ EVITA overflow horizontal */
+html {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Roboto", sans-serif;
   background: radial-gradient(circle at top, #111111 0, #020202 45%, #000000 100%);
   color: var(--text);
+
+  /* ✅ EVITA que se salga por texto largo */
+  overflow-x: hidden;
 }
 
 /* Vistas */
@@ -55,6 +68,10 @@ body {
   padding: 24px 26px;
   max-width: 520px;
   width: 100%;
+
+  /* 🔥 NUEVO: leve borde dorado para resaltar */
+  outline: 1px solid rgba(251, 191, 36, 0.10);
+  outline-offset: -1px;
 }
 
 .card-pin,
@@ -223,6 +240,9 @@ body {
   color: var(--text);
   font-size: 0.9rem;
   outline: none;
+
+  /* ✅ evita overflow en inputs en grid */
+  min-width: 0;
 }
 
 .field-input:focus {
@@ -266,6 +286,9 @@ textarea.field-input {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 1.2fr);
   align-items: center;
+
+  /* ✅ evita que algo empuje el grid */
+  min-width: 0;
 }
 
 .topbar-left,
@@ -273,18 +296,21 @@ textarea.field-input {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0; /* ✅ */
 }
 
 .brand-inline {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0; /* ✅ */
 }
 
 .app-name-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0; /* ✅ */
 }
 
 .app-name {
@@ -293,6 +319,12 @@ textarea.field-input {
   padding: 3px 6px;
   border-radius: 999px;
   border: 1px dashed transparent;
+
+  /* ✅ texto largo no rompe */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-name:focus {
@@ -305,6 +337,12 @@ textarea.field-input {
   display: flex;
   justify-content: center;
   gap: 8px;
+
+  /* ✅ si hay muchas pestañas, no rompe */
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
 }
 
 .nav-btn {
@@ -316,6 +354,7 @@ textarea.field-input {
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.15s ease;
+  flex: 0 0 auto; /* ✅ */
 }
 
 .nav-btn:hover {
@@ -332,6 +371,7 @@ textarea.field-input {
 .user-info {
   font-size: 0.8rem;
   color: var(--muted);
+  min-width: 0; /* ✅ */
 }
 
 .user-email {
@@ -350,6 +390,10 @@ textarea.field-input {
 /* Páginas */
 .layout-main {
   padding: 16px;
+
+  /* ✅ evita que el contenido cree overflow */
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .page {
@@ -361,11 +405,15 @@ textarea.field-input {
 }
 
 .panel {
-  background: rgba(5, 5, 5, 0.96);
+  /* 🔥 Ajuste mínimo: panel más “visible” sin cambiar look Nexus */
+  background: linear-gradient(180deg, var(--panel-strong), rgba(5,5,5,0.96));
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--glow);
   padding: 18px 18px 16px;
+
+  /* ✅ */
+  min-width: 0;
 }
 
 .panel h2 {
@@ -394,6 +442,7 @@ textarea.field-input {
   display: flex;
   gap: 10px;
   margin-top: 12px;
+  flex-wrap: wrap; /* ✅ por si en algún momento se aprieta */
 }
 
 /* Historial tabla */
@@ -401,25 +450,36 @@ textarea.field-input {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap; /* ✅ evita desbordes */
 }
 
 .panel-header-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap; /* ✅ */
 }
 
+/* ✅ CLAVE: evitar que la tabla rompa el borde */
 .table-wrap {
   margin-top: 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
   overflow: auto;
   max-height: 360px;
+
+  width: 100%;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8rem;
+
+  /* ✅ si hay muchas columnas, scroll horizontal dentro del wrap */
+  min-width: 760px;
 }
 
 .data-table thead {
@@ -430,6 +490,7 @@ textarea.field-input {
 .data-table td {
   padding: 8px 10px;
   border-bottom: 1px solid rgba(30, 30, 30, 0.95);
+  white-space: nowrap; /* ✅ */
 }
 
 .data-table tbody tr:nth-child(even) {
@@ -461,6 +522,7 @@ textarea.field-input {
 .filter-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap; /* ✅ */
 }
 
 /* Footer */
@@ -501,7 +563,11 @@ textarea.field-input {
   .user-email {
     max-width: 160px;
   }
+
+  /* ✅ tabla más flexible en pantallas pequeñas */
+  .data-table { min-width: 680px; }
 }
+
 /* ========== CAJA (RESUMEN) ========== */
 
 .caja-summary-grid {
@@ -515,8 +581,10 @@ textarea.field-input {
   border-radius: 16px;
   padding: 14px 14px 12px;
   border: 1px solid var(--border);
-  background: radial-gradient(circle at top left, #050505, #020202);
-  box-shadow: 0 16px 40px rgba(0,0,0,0.9);
+
+  /* 🔥 más contraste para que se vea “caja” */
+  background: linear-gradient(180deg, rgba(18,18,18,0.92), rgba(5,5,5,0.96));
+  box-shadow: var(--glow);
 }
 
 .caja-card h3 {
