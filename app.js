@@ -20,7 +20,7 @@ const LOCAL_KEY = "nexus_salon_state_v4";
 
 let state = {
   // PIN maestro (admin)
-  pin: "1234",
+  pin: "058312",
 
   // Sesión local (rol)
   session: {
